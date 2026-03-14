@@ -14,7 +14,239 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      ingredients: {
+        Row: {
+          calib_factor: number
+          cost_per_unit: number
+          created_at: string
+          current_stock: number
+          id: string
+          is_perishable: boolean
+          name: string
+          reorder_qty: number
+          shelf_life_days: number | null
+          storage_type: string
+          threshold: number
+          unit: string
+          updated_at: string
+          vendor: string | null
+          vendor_email: string | null
+        }
+        Insert: {
+          calib_factor?: number
+          cost_per_unit?: number
+          created_at?: string
+          current_stock?: number
+          id?: string
+          is_perishable?: boolean
+          name: string
+          reorder_qty?: number
+          shelf_life_days?: number | null
+          storage_type?: string
+          threshold?: number
+          unit?: string
+          updated_at?: string
+          vendor?: string | null
+          vendor_email?: string | null
+        }
+        Update: {
+          calib_factor?: number
+          cost_per_unit?: number
+          created_at?: string
+          current_stock?: number
+          id?: string
+          is_perishable?: boolean
+          name?: string
+          reorder_qty?: number
+          shelf_life_days?: number | null
+          storage_type?: string
+          threshold?: number
+          unit?: string
+          updated_at?: string
+          vendor?: string | null
+          vendor_email?: string | null
+        }
+        Relationships: []
+      }
+      lots: {
+        Row: {
+          created_at: string
+          expires_at: string | null
+          id: string
+          ingredient_id: string
+          lot_label: string
+          quantity_received: number
+          quantity_remaining: number
+          received_at: string
+          source: string | null
+        }
+        Insert: {
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          ingredient_id: string
+          lot_label?: string
+          quantity_received?: number
+          quantity_remaining?: number
+          received_at?: string
+          source?: string | null
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          ingredient_id?: string
+          lot_label?: string
+          quantity_received?: number
+          quantity_remaining?: number
+          received_at?: string
+          source?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lots_ingredient_id_fkey"
+            columns: ["ingredient_id"]
+            isOneToOne: false
+            referencedRelation: "ingredients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      recipe_ingredients: {
+        Row: {
+          confidence: number
+          id: string
+          ingredient_id: string | null
+          name: string
+          qty: number
+          recipe_id: string
+          unit: string
+        }
+        Insert: {
+          confidence?: number
+          id?: string
+          ingredient_id?: string | null
+          name: string
+          qty?: number
+          recipe_id: string
+          unit?: string
+        }
+        Update: {
+          confidence?: number
+          id?: string
+          ingredient_id?: string | null
+          name?: string
+          qty?: number
+          recipe_id?: string
+          unit?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "recipe_ingredients_ingredient_id_fkey"
+            columns: ["ingredient_id"]
+            isOneToOne: false
+            referencedRelation: "ingredients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recipe_ingredients_recipe_id_fkey"
+            columns: ["recipe_id"]
+            isOneToOne: false
+            referencedRelation: "recipes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      recipes: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          status: string
+          updated_at: string
+          verified_by: string | null
+          verified_date: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          status?: string
+          updated_at?: string
+          verified_by?: string | null
+          verified_date?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          status?: string
+          updated_at?: string
+          verified_by?: string | null
+          verified_date?: string | null
+        }
+        Relationships: []
+      }
+      sales: {
+        Row: {
+          created_at: string
+          id: string
+          item: string
+          qty: number
+          reason: string | null
+          source: string
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          item: string
+          qty?: number
+          reason?: string | null
+          source?: string
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          item?: string
+          qty?: number
+          reason?: string | null
+          source?: string
+          status?: string
+        }
+        Relationships: []
+      }
+      vendors: {
+        Row: {
+          created_at: string
+          email: string | null
+          id: string
+          lead_time_days: number
+          name: string
+          notes: string | null
+          phone: string | null
+        }
+        Insert: {
+          created_at?: string
+          email?: string | null
+          id?: string
+          lead_time_days?: number
+          name: string
+          notes?: string | null
+          phone?: string | null
+        }
+        Update: {
+          created_at?: string
+          email?: string | null
+          id?: string
+          lead_time_days?: number
+          name?: string
+          notes?: string | null
+          phone?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
