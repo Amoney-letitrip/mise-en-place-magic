@@ -18,7 +18,7 @@ interface DashboardTabProps {
 }
 
 export const DashboardTab = ({
-  ingredients, orderDraft, stockoutRisk, expiredLots, expiringLots,
+  orderDraft, stockoutRisk, expiredLots, expiringLots,
   suggestions, fefo, setTab,
 }: DashboardTabProps) => {
   const now = new Date();

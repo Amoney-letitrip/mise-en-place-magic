@@ -1,5 +1,4 @@
 import type { TabId } from '@/lib/types';
-import type { TabId } from '@/lib/types';
 
 interface NavItem {
   id: TabId;
