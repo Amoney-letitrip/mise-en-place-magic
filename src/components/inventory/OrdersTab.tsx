@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { StatusTag, Mono, SectionHead } from './StatusTag';
+import { StatusTag, Mono } from './StatusTag';
 import { Button } from '@/components/ui/button';
 import { fmtDate, fmtN, diffDays, addDays } from '@/lib/inventory-utils';
 import type { Database } from '@/integrations/supabase/types';

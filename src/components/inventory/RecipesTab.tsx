@@ -1,7 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
-import { StatusTag, Mono, SectionHead } from './StatusTag';
+import { StatusTag, SectionHead } from './StatusTag';
 import { Button } from '@/components/ui/button';
-import { fmtN } from '@/lib/inventory-utils';
 import type { Database } from '@/integrations/supabase/types';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
