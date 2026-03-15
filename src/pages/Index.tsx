@@ -2,6 +2,10 @@ import { useAppState } from '@/hooks/use-app-state';
 import { AppNav } from '@/components/inventory/AppNav';
 import { DashboardTab } from '@/components/inventory/DashboardTab';
 import { InventoryTab } from '@/components/inventory/InventoryTab';
+import { OrdersTab } from '@/components/inventory/OrdersTab';
+import { SalesTab } from '@/components/inventory/SalesTab';
+import { RecipesTab } from '@/components/inventory/RecipesTab';
+import { CostsTab } from '@/components/inventory/CostsTab';
 import type { TabId } from '@/lib/types';
 
 const Index = () => {
@@ -60,35 +64,38 @@ const Index = () => {
         )}
 
         {state.tab === 'orders' && (
-          <div className="animate-fade-up text-center py-20">
-            <div className="text-4xl mb-3">📦</div>
-            <h2 className="text-lg font-bold text-foreground mb-1">Orders</h2>
-            <p className="text-muted-foreground text-sm">Coming next — purchase orders & vendor management</p>
-          </div>
+          <OrdersTab
+            orderDraft={state.orderDraft}
+            vendors={state.vendors}
+            forecasts={state.forecasts}
+            targetDays={state.targetDays}
+            setTargetDays={state.setTargetDays}
+          />
         )}
 
         {state.tab === 'sales' && (
-          <div className="animate-fade-up text-center py-20">
-            <div className="text-4xl mb-3">📊</div>
-            <h2 className="text-lg font-bold text-foreground mb-1">Sales</h2>
-            <p className="text-muted-foreground text-sm">Coming next — sales recording & POS integration</p>
-          </div>
+          <SalesTab
+            sales={state.sales}
+            recipes={state.recipes}
+            flaggedSales={state.flaggedSales}
+            fefo={state.fefo}
+          />
         )}
 
         {state.tab === 'recipes' && (
-          <div className="animate-fade-up text-center py-20">
-            <div className="text-4xl mb-3">📋</div>
-            <h2 className="text-lg font-bold text-foreground mb-1">Recipes</h2>
-            <p className="text-muted-foreground text-sm">Coming next — AI menu scanning & recipe management</p>
-          </div>
+          <RecipesTab
+            recipes={state.recipes}
+            ingredients={state.ingredients}
+            fefo={state.fefo}
+            draftRecipes={state.draftRecipes}
+          />
         )}
 
         {state.tab === 'costs' && (
-          <div className="animate-fade-up text-center py-20">
-            <div className="text-4xl mb-3">💰</div>
-            <h2 className="text-lg font-bold text-foreground mb-1">Costs</h2>
-            <p className="text-muted-foreground text-sm">Coming next — food cost analytics & margins</p>
-          </div>
+          <CostsTab
+            ingredients={state.ingredients}
+            recipes={state.recipes}
+          />
         )}
       </div>
     </div>
