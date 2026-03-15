@@ -39,8 +39,8 @@ export const SalesTab = ({ sales, recipes, flaggedSales, fefo }: SalesTabProps) 
   const [csvResult, setCsvResult] = useState<{ err?: string; processed?: number; flagged?: number; total?: number } | null>(null);
   const [connectedPOS, setConnectedPOS] = useState<Array<{ id: string; name: string }>>([]);
   const [posModal, setPosModal] = useState(false);
-  const [posSetupStep, setPosSetupStep] = useState<'list' | 'configure' | 'done'>('list');
-  const [posSelected, setPosSelected] = useState<typeof POS_SYSTEMS[0] | null>(null);
+  const [_posSetupStep, setPosSetupStep] = useState<'list' | 'configure' | 'done'>('list');
+  const [_posSelected, _setPosSelected] = useState<typeof POS_SYSTEMS[0] | null>(null);
   const saleTimer = useRef<NodeJS.Timeout | null>(null);
   const qc = useQueryClient();
 

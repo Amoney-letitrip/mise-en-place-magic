@@ -340,8 +340,7 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
           <div className="bg-card border border-border rounded-lg p-4 mb-3">
             <div className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground mb-3">Ingredients per serving — link to your stock</div>
             <div className="grid gap-2">
-              {selectedRecipe.ingredients.map((ing, i) => {
-                const ingData = ingredients.find(x => x.id === ing.ingredient_id);
+              {selectedRecipe.ingredients.map((ing) => {
                 return (
                   <div key={ing.id} className="flex items-center gap-2 p-2.5 bg-muted/50 rounded-lg border border-border/50">
                     <select
