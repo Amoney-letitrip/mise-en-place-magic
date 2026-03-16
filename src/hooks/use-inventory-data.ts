@@ -7,6 +7,12 @@ type IngredientInsert = Database['public']['Tables']['ingredients']['Insert'];
 type Lot = Database['public']['Tables']['lots']['Row'];
 type LotInsert = Database['public']['Tables']['lots']['Insert'];
 
+const getUserId = async () => {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+  return user.id;
+};
+
 export const useIngredients = () =>
   useQuery({
     queryKey: ['ingredients'],
@@ -50,10 +56,11 @@ export const useUpdateIngredient = () => {
 export const useCreateIngredient = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (ingredient: IngredientInsert) => {
+    mutationFn: async (ingredient: Omit<IngredientInsert, 'user_id'>) => {
+      const userId = await getUserId();
       const { data, error } = await supabase
         .from('ingredients')
-        .insert(ingredient)
+        .insert({ ...ingredient, user_id: userId })
         .select()
         .single();
       if (error) throw error;
@@ -80,10 +87,11 @@ export const useUpdateLot = () => {
 export const useCreateLot = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (lot: LotInsert) => {
+    mutationFn: async (lot: Omit<LotInsert, 'user_id'>) => {
+      const userId = await getUserId();
       const { data, error } = await supabase
         .from('lots')
-        .insert(lot)
+        .insert({ ...lot, user_id: userId })
         .select()
         .single();
       if (error) throw error;
@@ -156,3 +164,56 @@ export const useVendors = () =>
       return data;
     },
   });
+
+export const useProfile = () =>
+  useQuery({
+    queryKey: ['profile'],
+    queryFn: async () => {
+      const userId = await getUserId();
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+  });
+
+export const useEnsureProfile = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const userId = await getUserId();
+      const { data: existing } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('id', userId)
+        .maybeSingle();
+      if (existing) return existing;
+      const { data, error } = await supabase
+        .from('profiles')
+        .insert({ id: userId })
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['profile'] }),
+  });
+};
+
+export const useUpdateProfile = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (updates: { restaurant_name?: string; onboarding_completed?: boolean }) => {
+      const userId = await getUserId();
+      const { error } = await supabase
+        .from('profiles')
+        .update(updates)
+        .eq('id', userId);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['profile'] }),
+  });
+};
