@@ -1,5 +1,7 @@
 import { useAppState } from '@/hooks/use-app-state';
+import { useIsMobile } from '@/hooks/use-mobile';
 import { AppNav } from '@/components/inventory/AppNav';
+import { MobileNav } from '@/components/inventory/MobileNav';
 import { DashboardTab } from '@/components/inventory/DashboardTab';
 import { InventoryTab } from '@/components/inventory/InventoryTab';
 import { OrdersTab } from '@/components/inventory/OrdersTab';
@@ -10,6 +12,7 @@ import type { TabId } from '@/lib/types';
 
 const Index = () => {
   const state = useAppState();
+  const isMobile = useIsMobile();
 
   const navItems: Array<{ id: TabId; label: string; badge?: number | null }> = [
     { id: 'dashboard', label: 'Dashboard' },
@@ -33,7 +36,7 @@ const Index = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className={`min-h-screen bg-background ${isMobile ? 'pb-[70px]' : ''}`}>
       <AppNav tab={state.tab} setTab={state.setTab} fefo={state.fefo} setFefo={state.setFefo} navItems={navItems} />
 
       <div className="max-w-content mx-auto px-4 py-5">
@@ -98,6 +101,8 @@ const Index = () => {
           />
         )}
       </div>
+
+      {isMobile && <MobileNav tab={state.tab} setTab={state.setTab} navItems={navItems} />}
     </div>
   );
 };

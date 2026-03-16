@@ -1,0 +1,129 @@
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+};
+
+serve(async (req) => {
+  if (req.method === "OPTIONS")
+    return new Response(null, { headers: corsHeaders });
+
+  try {
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
+
+    const { type, base64, mediaType, url } = await req.json();
+
+    let userContent: any[];
+
+    if (type === "photo" && base64) {
+      userContent = [
+        {
+          type: "image_url",
+          image_url: { url: `data:${mediaType || "image/jpeg"};base64,${base64}` },
+        },
+        {
+          type: "text",
+          text: "Extract every dish/menu item from this menu image. For each dish, estimate the ingredients and quantities needed for one serving. Return JSON only.",
+        },
+      ];
+    } else if (type === "url" && url) {
+      userContent = [
+        {
+          type: "text",
+          text: `I have a restaurant menu at this URL: ${url}\n\nPlease analyze the menu and extract every dish/menu item. For each dish, estimate the ingredients and quantities needed for one serving. Return JSON only.`,
+        },
+      ];
+    } else {
+      return new Response(
+        JSON.stringify({ error: "Provide type='photo' with base64 or type='url' with url" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const systemPrompt = `You are a professional chef and restaurant consultant. When given a menu (image or description), extract every dish and estimate realistic ingredient quantities per serving.
+
+Return ONLY valid JSON in this exact format:
+{
+  "recipes": [
+    {
+      "name": "Dish Name",
+      "ingredients": [
+        { "name": "Ingredient", "qty": 8, "unit": "oz" }
+      ]
+    }
+  ]
+}
+
+Rules:
+- Use common kitchen units: oz, g, ml, pcs, tbsp, tsp, cups, lbs
+- Estimate realistic quantities for a single restaurant serving
+- Include all major ingredients (proteins, produce, dairy, grains, oils, seasonings)
+- For items like "House Salad", still list main ingredients
+- Return ONLY the JSON, no markdown fences or explanation`;
+
+    const response = await fetch(
+      "https://ai.gateway.lovable.dev/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "google/gemini-2.5-flash",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userContent },
+          ],
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      if (response.status === 429) {
+        return new Response(
+          JSON.stringify({ error: "Rate limit exceeded. Please try again in a moment." }),
+          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      if (response.status === 402) {
+        return new Response(
+          JSON.stringify({ error: "AI credits exhausted. Please add credits in workspace settings." }),
+          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      const t = await response.text();
+      console.error("AI gateway error:", response.status, t);
+      throw new Error(`AI gateway returned ${response.status}`);
+    }
+
+    const data = await response.json();
+    const raw = data.choices?.[0]?.message?.content || "";
+
+    // Parse JSON from response (strip markdown fences if present)
+    const jsonStr = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+    let parsed: { recipes: any[] };
+    try {
+      parsed = JSON.parse(jsonStr);
+    } catch {
+      console.error("Failed to parse AI response:", raw);
+      return new Response(
+        JSON.stringify({ error: "AI returned invalid format", raw }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    return new Response(JSON.stringify(parsed), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  } catch (e) {
+    console.error("scan-menu error:", e);
+    return new Response(
+      JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+});
