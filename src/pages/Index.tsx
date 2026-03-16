@@ -1,5 +1,7 @@
+import { useEffect } from 'react';
 import { useAppState } from '@/hooks/use-app-state';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { useProfile, useEnsureProfile } from '@/hooks/use-inventory-data';
 import { AppNav } from '@/components/inventory/AppNav';
 import { MobileNav } from '@/components/inventory/MobileNav';
 import { DashboardTab } from '@/components/inventory/DashboardTab';
@@ -8,11 +10,21 @@ import { OrdersTab } from '@/components/inventory/OrdersTab';
 import { SalesTab } from '@/components/inventory/SalesTab';
 import { RecipesTab } from '@/components/inventory/RecipesTab';
 import { CostsTab } from '@/components/inventory/CostsTab';
+import { OnboardingWizard } from '@/components/inventory/OnboardingWizard';
 import type { TabId } from '@/lib/types';
 
 const Index = () => {
   const state = useAppState();
   const isMobile = useIsMobile();
+  const { data: profile, isLoading: loadingProfile } = useProfile();
+  const ensureProfile = useEnsureProfile();
+
+  // Create profile if it doesn't exist
+  useEffect(() => {
+    if (!loadingProfile && profile === null) {
+      ensureProfile.mutate();
+    }
+  }, [loadingProfile, profile]);
 
   const navItems: Array<{ id: TabId; label: string; badge?: number | null }> = [
     { id: 'dashboard', label: 'Dashboard' },
@@ -23,16 +35,21 @@ const Index = () => {
     { id: 'costs', label: 'Costs' },
   ];
 
-  if (state.isLoading) {
+  // Loading state
+  if (state.isLoading || loadingProfile) {
     return (
-      <div className="min-h-screen bg-background">
-        <AppNav tab={state.tab} setTab={state.setTab} fefo={state.fefo} setFefo={state.setFefo} navItems={navItems} />
-        <div className="max-w-content mx-auto px-4 py-20 text-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
           <div className="text-4xl mb-4 animate-pulse">🍽</div>
-          <div className="text-muted-foreground">Loading inventory…</div>
+          <div className="text-muted-foreground">Loading…</div>
         </div>
       </div>
     );
+  }
+
+  // Show onboarding if not completed
+  if (profile && !profile.onboarding_completed) {
+    return <OnboardingWizard restaurantName={profile.restaurant_name} />;
   }
 
   return (
@@ -82,6 +99,8 @@ const Index = () => {
             recipes={state.recipes}
             flaggedSales={state.flaggedSales}
             fefo={state.fefo}
+            ingredients={state.ingredients}
+            lots={state.lots}
           />
         )}
 

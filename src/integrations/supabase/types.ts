@@ -29,6 +29,7 @@ export type Database = {
           threshold: number
           unit: string
           updated_at: string
+          user_id: string
           vendor: string | null
           vendor_email: string | null
         }
@@ -46,6 +47,7 @@ export type Database = {
           threshold?: number
           unit?: string
           updated_at?: string
+          user_id: string
           vendor?: string | null
           vendor_email?: string | null
         }
@@ -63,6 +65,7 @@ export type Database = {
           threshold?: number
           unit?: string
           updated_at?: string
+          user_id?: string
           vendor?: string | null
           vendor_email?: string | null
         }
@@ -79,6 +82,7 @@ export type Database = {
           quantity_remaining: number
           received_at: string
           source: string | null
+          user_id: string
         }
         Insert: {
           created_at?: string
@@ -90,6 +94,7 @@ export type Database = {
           quantity_remaining?: number
           received_at?: string
           source?: string | null
+          user_id: string
         }
         Update: {
           created_at?: string
@@ -101,6 +106,7 @@ export type Database = {
           quantity_remaining?: number
           received_at?: string
           source?: string | null
+          user_id?: string
         }
         Relationships: [
           {
@@ -112,6 +118,27 @@ export type Database = {
           },
         ]
       }
+      profiles: {
+        Row: {
+          created_at: string
+          id: string
+          onboarding_completed: boolean
+          restaurant_name: string | null
+        }
+        Insert: {
+          created_at?: string
+          id: string
+          onboarding_completed?: boolean
+          restaurant_name?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          onboarding_completed?: boolean
+          restaurant_name?: string | null
+        }
+        Relationships: []
+      }
       recipe_ingredients: {
         Row: {
           confidence: number
@@ -121,6 +148,7 @@ export type Database = {
           qty: number
           recipe_id: string
           unit: string
+          user_id: string
         }
         Insert: {
           confidence?: number
@@ -130,6 +158,7 @@ export type Database = {
           qty?: number
           recipe_id: string
           unit?: string
+          user_id: string
         }
         Update: {
           confidence?: number
@@ -139,6 +168,7 @@ export type Database = {
           qty?: number
           recipe_id?: string
           unit?: string
+          user_id?: string
         }
         Relationships: [
           {
@@ -164,6 +194,7 @@ export type Database = {
           name: string
           status: string
           updated_at: string
+          user_id: string
           verified_by: string | null
           verified_date: string | null
         }
@@ -173,6 +204,7 @@ export type Database = {
           name: string
           status?: string
           updated_at?: string
+          user_id: string
           verified_by?: string | null
           verified_date?: string | null
         }
@@ -182,6 +214,7 @@ export type Database = {
           name?: string
           status?: string
           updated_at?: string
+          user_id?: string
           verified_by?: string | null
           verified_date?: string | null
         }
@@ -196,6 +229,7 @@ export type Database = {
           reason: string | null
           source: string
           status: string
+          user_id: string
         }
         Insert: {
           created_at?: string
@@ -205,6 +239,7 @@ export type Database = {
           reason?: string | null
           source?: string
           status?: string
+          user_id: string
         }
         Update: {
           created_at?: string
@@ -214,6 +249,7 @@ export type Database = {
           reason?: string | null
           source?: string
           status?: string
+          user_id?: string
         }
         Relationships: []
       }
@@ -226,6 +262,7 @@ export type Database = {
           name: string
           notes: string | null
           phone: string | null
+          user_id: string
         }
         Insert: {
           created_at?: string
@@ -235,6 +272,7 @@ export type Database = {
           name: string
           notes?: string | null
           phone?: string | null
+          user_id: string
         }
         Update: {
           created_at?: string
@@ -244,6 +282,7 @@ export type Database = {
           name?: string
           notes?: string | null
           phone?: string | null
+          user_id?: string
         }
         Relationships: []
       }

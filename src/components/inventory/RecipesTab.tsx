@@ -45,6 +45,12 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
 
   const selectedRecipe = recipes.find(r => r.id === selectedRId);
 
+  const getUserId = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+    return user.id;
+  };
+
   const scanMenuPhoto = useCallback(async (file: File) => {
     setMenuScanState('scanning');
     setMenuPreviewUrl(URL.createObjectURL(file));
@@ -56,6 +62,7 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
         r.readAsDataURL(file);
       });
       const mediaType = file.type || 'image/jpeg';
+      const userId = await getUserId();
 
       const { data: fnData, error: fnError } = await supabase.functions.invoke('scan-menu', {
         body: { type: 'photo', base64, mediaType },
@@ -63,9 +70,8 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
       if (fnError) throw fnError;
       const newRecipes = fnData?.recipes || [];
 
-      // Insert recipes into DB
       for (const r of newRecipes) {
-        const { data: recipe, error: re } = await supabase.from('recipes').insert({ name: r.name, status: 'draft' }).select().single();
+        const { data: recipe, error: re } = await supabase.from('recipes').insert({ name: r.name, status: 'draft', user_id: userId }).select().single();
         if (re || !recipe) continue;
         const ings = (r.ingredients || []).map((ing: any) => ({
           recipe_id: recipe.id,
@@ -73,6 +79,7 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
           qty: ing.qty,
           unit: ing.unit,
           confidence: 0.75,
+          user_id: userId,
         }));
         if (ings.length > 0) await supabase.from('recipe_ingredients').insert(ings);
       }
@@ -91,6 +98,7 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
     setMenuScanState('scanning');
     setMenuPreviewUrl(null);
     try {
+      const userId = await getUserId();
       const { data: fnData, error: fnError } = await supabase.functions.invoke('scan-menu', {
         body: { type: 'url', url },
       });
@@ -98,7 +106,7 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
       const newRecipes = fnData?.recipes || [];
 
       for (const r of newRecipes) {
-        const { data: recipe, error: re } = await supabase.from('recipes').insert({ name: r.name, status: 'draft' }).select().single();
+        const { data: recipe, error: re } = await supabase.from('recipes').insert({ name: r.name, status: 'draft', user_id: userId }).select().single();
         if (re || !recipe) continue;
         const ings = (r.ingredients || []).map((ing: any) => ({
           recipe_id: recipe.id,
@@ -106,6 +114,7 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
           qty: ing.qty,
           unit: ing.unit,
           confidence: 0.75,
+          user_id: userId,
         }));
         if (ings.length > 0) await supabase.from('recipe_ingredients').insert(ings);
       }
@@ -160,7 +169,6 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
           {/* EMPTY STATE */}
           {recipes.length === 0 && menuScanState !== 'scanning' && menuScanState !== 'error' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-              {/* Photo Upload */}
               <div
                 className="bg-blue-50/50 border border-dashed border-blue-200 rounded-lg p-8 text-center cursor-pointer hover:border-primary transition-colors"
                 onClick={() => fileRef.current?.click()}
@@ -174,7 +182,6 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
                 <div className="mt-2.5 text-[11px] text-primary/40">JPG, PNG, HEIC · printed or handwritten</div>
               </div>
 
-              {/* URL Input */}
               <div className="bg-emerald-50/50 border border-dashed border-emerald-200 rounded-lg p-8 text-center">
                 <div className="text-5xl mb-3.5">🔗</div>
                 <div className="font-extrabold text-base text-emerald-700 mb-2">Paste a menu link</div>
@@ -348,57 +355,41 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
                       value={ing.ingredient_id || ''}
                       onChange={e => updateRecipeIngredient(ing.id, { ingredient_id: e.target.value || null })}
                     >
-                      <option value="">— {ing.name} (link to stock)</option>
-                      {ingredients.map(mi => <option key={mi.id} value={mi.id}>{mi.name} ({mi.unit})</option>)}
+                      <option value="">— Unlinked —</option>
+                      {ingredients.map(i => <option key={i.id} value={i.id}>{i.name} ({i.unit})</option>)}
                     </select>
                     <input
-                      className="w-[70px] text-right px-2 py-1.5 border border-border rounded-md text-[13px] bg-card focus:outline-none focus:ring-2 focus:ring-primary/20"
-                      value={ing.qty}
                       type="number"
+                      className="w-20 text-xs border border-border rounded-md px-2 py-1.5 bg-card text-center font-mono"
+                      value={ing.qty}
                       onChange={e => updateRecipeIngredient(ing.id, { qty: parseFloat(e.target.value) || 0 })}
                     />
                     <input
-                      className="w-[60px] px-2 py-1.5 border border-border rounded-md text-[13px] bg-card focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      className="w-16 text-xs border border-border rounded-md px-2 py-1.5 bg-card text-center"
                       value={ing.unit}
                       onChange={e => updateRecipeIngredient(ing.id, { unit: e.target.value })}
                     />
-                    <button
-                      className="w-7 h-7 border border-border rounded-md text-muted-foreground hover:text-foreground flex items-center justify-center flex-shrink-0"
-                      onClick={async () => {
-                        await supabase.from('recipe_ingredients').delete().eq('id', ing.id);
-                        qc.invalidateQueries({ queryKey: ['recipes-with-ingredients'] });
-                      }}
-                    >×</button>
+                    {ing.ingredient_id ? (
+                      <StatusTag variant="green">✓ Linked</StatusTag>
+                    ) : (
+                      <StatusTag variant="yellow">⚠</StatusTag>
+                    )}
                   </div>
                 );
               })}
             </div>
-            <button
-              className="mt-2 text-primary font-semibold text-[13px] flex items-center gap-1 hover:underline"
-              onClick={async () => {
-                await supabase.from('recipe_ingredients').insert({ recipe_id: selectedRecipe.id, name: 'New ingredient', qty: 1, unit: 'oz' });
-                qc.invalidateQueries({ queryKey: ['recipes-with-ingredients'] });
-              }}
-            >
-              + Add Ingredient
-            </button>
           </div>
 
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setSelectedRId(null)}>Save Draft</Button>
-            <Button
-              className="bg-emerald-600 hover:bg-emerald-700"
-              onClick={() => verifyRecipe(selectedRecipe.id)}
-            >
-              {selectedRecipe.status !== 'verified' ? '✓ Verify — Activate Inventory Tracking' : '✓ Re-verify'}
+            {selectedRecipe.status === 'draft' && (
+              <Button onClick={() => verifyRecipe(selectedRecipe.id)}>
+                ✓ Verify Recipe
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => setSelectedRId(null)}>
+              Close
             </Button>
           </div>
-
-          {selectedRecipe.status === 'draft' && (
-            <div className="mt-2.5 p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
-              💡 Once verified, each sale of "{selectedRecipe.name}" depletes ingredients using {fefo ? 'FEFO' : 'FIFO'} lot logic.
-            </div>
-          )}
         </>
       )}
     </div>
