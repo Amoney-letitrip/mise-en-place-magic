@@ -5,6 +5,11 @@ import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { useUpdateProfile } from '@/hooks/use-inventory-data';
 
+interface ScannedRecipe {
+  name: string;
+  ingredients: Array<{ name: string; qty: number; unit: string }>;
+}
+
 interface OnboardingWizardProps {
   restaurantName: string | null;
 }
@@ -13,7 +18,8 @@ export const OnboardingWizard = ({ restaurantName: initialName }: OnboardingWiza
   const [step, setStep] = useState(0);
   const [name, setName] = useState(initialName || '');
   const [scanState, setScanState] = useState<'idle' | 'scanning' | 'done' | 'error'>('idle');
-  const [scannedRecipes, setScannedRecipes] = useState<Array<{ name: string; ingredients: Array<{ name: string; qty: number; unit: string }> }>>([]);
+  const [scannedRecipes, setScannedRecipes] = useState<ScannedRecipe[]>([]);
+  const [removedIndices, setRemovedIndices] = useState<Set<number>>(new Set());
   const [menuPreviewUrl, setMenuPreviewUrl] = useState<string | null>(null);
   const [menuUrlInput, setMenuUrlInput] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
@@ -42,6 +48,7 @@ export const OnboardingWizard = ({ restaurantName: initialName }: OnboardingWiza
       if (fnError) throw fnError;
       const recipes = fnData?.recipes || [];
       setScannedRecipes(recipes);
+      setRemovedIndices(new Set());
       setScanState('done');
       toast.success(`Found ${recipes.length} menu items`);
     } catch {
@@ -60,6 +67,7 @@ export const OnboardingWizard = ({ restaurantName: initialName }: OnboardingWiza
       if (fnError) throw fnError;
       const recipes = fnData?.recipes || [];
       setScannedRecipes(recipes);
+      setRemovedIndices(new Set());
       setScanState('done');
       toast.success(`Found ${recipes.length} menu items`);
     } catch {
@@ -68,12 +76,38 @@ export const OnboardingWizard = ({ restaurantName: initialName }: OnboardingWiza
     }
   }, []);
 
+  const toggleRemoveRecipe = useCallback((index: number) => {
+    setRemovedIndices(prev => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  }, []);
+
+  const updateScannedIngredient = useCallback((recipeIdx: number, ingIdx: number, field: string, value: any) => {
+    setScannedRecipes(prev => prev.map((r, ri) => {
+      if (ri !== recipeIdx) return r;
+      return {
+        ...r,
+        ingredients: r.ingredients.map((ing, ii) => {
+          if (ii !== ingIdx) return ing;
+          return { ...ing, [field]: value };
+        }),
+      };
+    }));
+  }, []);
+
+  const updateScannedRecipeName = useCallback((recipeIdx: number, newName: string) => {
+    setScannedRecipes(prev => prev.map((r, ri) => ri === recipeIdx ? { ...r, name: newName } : r));
+  }, []);
+
   const saveRecipesAndFinish = useCallback(async () => {
     try {
       const userId = await getUserId();
+      const toSave = scannedRecipes.filter((_, i) => !removedIndices.has(i));
 
-      // Save scanned recipes to DB
-      for (const r of scannedRecipes) {
+      for (const r of toSave) {
         const { data: recipe, error: re } = await supabase
           .from('recipes')
           .insert({ name: r.name, status: 'draft', user_id: userId })
@@ -91,7 +125,6 @@ export const OnboardingWizard = ({ restaurantName: initialName }: OnboardingWiza
         if (ings.length > 0) await supabase.from('recipe_ingredients').insert(ings);
       }
 
-      // Mark onboarding complete
       await updateProfile.mutateAsync({
         restaurant_name: name || undefined,
         onboarding_completed: true,
@@ -102,7 +135,7 @@ export const OnboardingWizard = ({ restaurantName: initialName }: OnboardingWiza
     } catch {
       toast.error('Failed to save — please try again');
     }
-  }, [scannedRecipes, name, updateProfile, qc]);
+  }, [scannedRecipes, removedIndices, name, updateProfile, qc]);
 
   const skipAndFinish = useCallback(async () => {
     await updateProfile.mutateAsync({
@@ -111,6 +144,8 @@ export const OnboardingWizard = ({ restaurantName: initialName }: OnboardingWiza
     });
     toast.success('Setup complete!');
   }, [name, updateProfile]);
+
+  const activeCount = scannedRecipes.filter((_, i) => !removedIndices.has(i)).length;
 
   const steps = [
     { title: 'Welcome', icon: '🍽' },
@@ -175,7 +210,6 @@ export const OnboardingWizard = ({ restaurantName: initialName }: OnboardingWiza
             </p>
 
             <div className="grid grid-cols-1 gap-3 mb-4">
-              {/* Photo Upload */}
               <div
                 className="border-2 border-dashed border-primary/30 rounded-xl p-6 text-center cursor-pointer hover:border-primary/60 hover:bg-primary/5 transition-all"
                 onClick={() => fileRef.current?.click()}
@@ -185,8 +219,7 @@ export const OnboardingWizard = ({ restaurantName: initialName }: OnboardingWiza
                 <div className="text-xs text-muted-foreground">Take a photo of your printed menu, or upload a PDF</div>
               </div>
 
-              {/* URL */}
-              <div className="border-2 border-dashed border-emerald-300/50 rounded-xl p-6 text-center">
+              <div className="border-2 border-dashed border-accent-foreground/20 rounded-xl p-6 text-center">
                 <div className="text-3xl mb-2">🔗</div>
                 <div className="font-bold text-sm text-foreground mb-2">Or paste your menu URL</div>
                 <div className="flex gap-2">
@@ -241,45 +274,83 @@ export const OnboardingWizard = ({ restaurantName: initialName }: OnboardingWiza
           </div>
         )}
 
-        {/* Done scanning → auto-advance to review */}
+        {/* Done scanning → advance to review */}
         {step === 1 && scanState === 'done' && (
           <div className="bg-card border border-border rounded-2xl p-8 text-center shadow-sm animate-fade-up">
             <div className="text-4xl mb-3">🎉</div>
             <div className="font-bold text-lg text-foreground mb-1.5">Found {scannedRecipes.length} menu items!</div>
-            <div className="text-sm text-muted-foreground mb-5">Review them before we save.</div>
+            <div className="text-sm text-muted-foreground mb-5">Review and edit them before we save.</div>
             <Button className="w-full" onClick={() => setStep(2)}>Review Recipes →</Button>
           </div>
         )}
 
-        {/* Step 2: Review */}
+        {/* Step 2: Review & Verify */}
         {step === 2 && (
           <div className="bg-card border border-border rounded-2xl p-6 shadow-sm animate-fade-up">
             <h2 className="text-xl font-extrabold text-foreground text-center mb-1">Review Your Recipes</h2>
             <p className="text-muted-foreground text-sm text-center mb-4">
-              These are drafts — you can edit and verify them later.
+              Edit names, adjust ingredients, or remove items. {activeCount} of {scannedRecipes.length} will be saved as drafts.
             </p>
 
             <div className="max-h-[400px] overflow-y-auto space-y-2 mb-5 pr-1">
-              {scannedRecipes.map((r, i) => (
-                <div key={i} className="border border-border rounded-lg p-3">
-                  <div className="font-bold text-sm mb-1.5">{r.name}</div>
-                  <div className="flex flex-wrap gap-1">
-                    {r.ingredients.map((ing, j) => (
-                      <span key={j} className="inline-flex items-center bg-muted/50 border border-border/50 rounded-md px-2 py-0.5 text-[11px] font-mono text-foreground">
-                        {ing.name} {ing.qty}{ing.unit}
-                      </span>
-                    ))}
+              {scannedRecipes.map((r, i) => {
+                const removed = removedIndices.has(i);
+                return (
+                  <div key={i} className={`border rounded-lg p-3 transition-all ${removed ? 'border-border/30 opacity-40' : 'border-border'}`}>
+                    <div className="flex items-start justify-between gap-2 mb-1.5">
+                      <input
+                        className={`font-bold text-sm bg-transparent border-b border-transparent hover:border-border focus:border-primary focus:outline-none px-0 py-0.5 flex-1 ${removed ? 'line-through' : ''}`}
+                        value={r.name}
+                        onChange={e => updateScannedRecipeName(i, e.target.value)}
+                        disabled={removed}
+                      />
+                      <button
+                        className={`text-xs px-2 py-1 rounded-md border transition-colors ${removed ? 'border-primary/30 text-primary hover:bg-primary/10' : 'border-destructive/30 text-destructive hover:bg-destructive/10'}`}
+                        onClick={() => toggleRemoveRecipe(i)}
+                      >
+                        {removed ? '↩ Restore' : '✕ Remove'}
+                      </button>
+                    </div>
+                    {!removed && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
+                        {r.ingredients.map((ing, j) => (
+                          <div key={j} className="flex items-center gap-1.5 bg-muted/50 rounded-md px-2 py-1">
+                            <input
+                              className="flex-1 text-[11px] bg-transparent border-b border-transparent hover:border-border focus:border-primary focus:outline-none font-mono"
+                              value={ing.name}
+                              onChange={e => updateScannedIngredient(i, j, 'name', e.target.value)}
+                            />
+                            <input
+                              type="number"
+                              className="w-12 text-[11px] bg-transparent border-b border-transparent hover:border-border focus:border-primary focus:outline-none text-center font-mono"
+                              value={ing.qty}
+                              onChange={e => updateScannedIngredient(i, j, 'qty', parseFloat(e.target.value) || 0)}
+                            />
+                            <input
+                              className="w-10 text-[11px] bg-transparent border-b border-transparent hover:border-border focus:border-primary focus:outline-none text-center font-mono"
+                              value={ing.unit}
+                              onChange={e => updateScannedIngredient(i, j, 'unit', e.target.value)}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
               {scannedRecipes.length === 0 && (
                 <div className="text-center text-muted-foreground py-8">No recipes found</div>
               )}
             </div>
 
-            <Button className="w-full" size="lg" onClick={saveRecipesAndFinish}>
-              Save & Start Using Mise en Place 🚀
-            </Button>
+            <div className="flex gap-2">
+              <Button className="flex-1" size="lg" onClick={saveRecipesAndFinish} disabled={activeCount === 0}>
+                Save {activeCount} Recipe{activeCount !== 1 ? 's' : ''} & Start 🚀
+              </Button>
+              <Button variant="outline" onClick={() => { setStep(1); setScanState('idle'); }}>
+                ← Back
+              </Button>
+            </div>
           </div>
         )}
       </div>

@@ -18,22 +18,27 @@ serve(async (req) => {
 
     let userContent: any[];
 
+    const extractionPrompt = `Extract every dish/menu item from this menu. For each dish, estimate the ingredients and quantities needed for one serving. Return JSON only.`;
+
     if (type === "photo" && base64) {
+      const mime = mediaType || "image/jpeg";
+      
+      // For PDFs, we send as application/pdf which Gemini supports natively
       userContent = [
         {
           type: "image_url",
-          image_url: { url: `data:${mediaType || "image/jpeg"};base64,${base64}` },
+          image_url: { url: `data:${mime};base64,${base64}` },
         },
         {
           type: "text",
-          text: "Extract every dish/menu item from this menu image. For each dish, estimate the ingredients and quantities needed for one serving. Return JSON only.",
+          text: extractionPrompt,
         },
       ];
     } else if (type === "url" && url) {
       userContent = [
         {
           type: "text",
-          text: `I have a restaurant menu at this URL: ${url}\n\nPlease analyze the menu and extract every dish/menu item. For each dish, estimate the ingredients and quantities needed for one serving. Return JSON only.`,
+          text: `I have a restaurant menu at this URL: ${url}\n\nPlease visit this URL and analyze the menu. ${extractionPrompt}`,
         },
       ];
     } else {
@@ -43,7 +48,7 @@ serve(async (req) => {
       );
     }
 
-    const systemPrompt = `You are a professional chef and restaurant consultant. When given a menu (image or description), extract every dish and estimate realistic ingredient quantities per serving.
+    const systemPrompt = `You are a professional chef and restaurant consultant. When given a menu (image, PDF, or description), extract every dish and estimate realistic ingredient quantities per serving.
 
 Return ONLY valid JSON in this exact format:
 {
@@ -62,6 +67,8 @@ Rules:
 - Estimate realistic quantities for a single restaurant serving
 - Include all major ingredients (proteins, produce, dairy, grains, oils, seasonings)
 - For items like "House Salad", still list main ingredients
+- If the image is blurry or hard to read, do your best to extract what you can see
+- If you see section headers (Appetizers, Mains, Desserts, etc.), include items from ALL sections
 - Return ONLY the JSON, no markdown fences or explanation`;
 
     const response = await fetch(
