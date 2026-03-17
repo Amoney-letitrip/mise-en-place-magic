@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -9,6 +9,23 @@ interface ScannedRecipe {
   name: string;
   ingredients: Array<{ name: string; qty: number; unit: string }>;
 }
+
+interface StockItem {
+  name: string;
+  unit: string;
+  currentStock: string;
+  storage: string;
+  isPerishable: boolean;
+  shelfLifeDays: string;
+}
+
+const POS_SYSTEMS = [
+  { id: 'square', name: 'Square', icon: '🟦', desc: 'Point of Sale & Payments' },
+  { id: 'toast', name: 'Toast', icon: '🍞', desc: 'Restaurant Management' },
+  { id: 'clover', name: 'Clover', icon: '🍀', desc: 'Smart POS System' },
+  { id: 'lightspeed', name: 'Lightspeed', icon: '⚡', desc: 'Retail & Restaurant POS' },
+  { id: 'revel', name: 'Revel', icon: '🔴', desc: 'iPad POS System' },
+];
 
 interface OnboardingWizardProps {
   restaurantName: string | null;
@@ -22,6 +39,8 @@ export const OnboardingWizard = ({ restaurantName: initialName }: OnboardingWiza
   const [removedIndices, setRemovedIndices] = useState<Set<number>>(new Set());
   const [menuPreviewUrl, setMenuPreviewUrl] = useState<string | null>(null);
   const [menuUrlInput, setMenuUrlInput] = useState('');
+  const [stockItems, setStockItems] = useState<StockItem[]>([]);
+  const [saving, setSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const qc = useQueryClient();
   const updateProfile = useUpdateProfile();
@@ -30,6 +49,28 @@ export const OnboardingWizard = ({ restaurantName: initialName }: OnboardingWiza
     const { data: { user } } = await supabase.auth.getUser();
     return user!.id;
   };
+
+  // Extract unique ingredients from accepted recipes
+  const buildStockItems = useCallback(() => {
+    const kept = scannedRecipes.filter((_, i) => !removedIndices.has(i));
+    const seen = new Map<string, StockItem>();
+    for (const r of kept) {
+      for (const ing of r.ingredients) {
+        const key = ing.name.toLowerCase().trim();
+        if (!seen.has(key)) {
+          seen.set(key, {
+            name: ing.name,
+            unit: ing.unit,
+            currentStock: '',
+            storage: 'room',
+            isPerishable: false,
+            shelfLifeDays: '',
+          });
+        }
+      }
+    }
+    return Array.from(seen.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [scannedRecipes, removedIndices]);
 
   const scanMenuPhoto = useCallback(async (file: File) => {
     setScanState('scanning');
@@ -88,13 +129,7 @@ export const OnboardingWizard = ({ restaurantName: initialName }: OnboardingWiza
   const updateScannedIngredient = useCallback((recipeIdx: number, ingIdx: number, field: string, value: any) => {
     setScannedRecipes(prev => prev.map((r, ri) => {
       if (ri !== recipeIdx) return r;
-      return {
-        ...r,
-        ingredients: r.ingredients.map((ing, ii) => {
-          if (ii !== ingIdx) return ing;
-          return { ...ing, [field]: value };
-        }),
-      };
+      return { ...r, ingredients: r.ingredients.map((ing, ii) => ii !== ingIdx ? ing : { ...ing, [field]: value }) };
     }));
   }, []);
 
@@ -102,12 +137,45 @@ export const OnboardingWizard = ({ restaurantName: initialName }: OnboardingWiza
     setScannedRecipes(prev => prev.map((r, ri) => ri === recipeIdx ? { ...r, name: newName } : r));
   }, []);
 
-  const saveRecipesAndFinish = useCallback(async () => {
+  const goToStockCount = useCallback(() => {
+    const items = buildStockItems();
+    setStockItems(items);
+    setStep(3);
+  }, [buildStockItems]);
+
+  const updateStockItem = useCallback((index: number, field: keyof StockItem, value: any) => {
+    setStockItems(prev => prev.map((item, i) => i === index ? { ...item, [field]: value } : item));
+  }, []);
+
+  const saveAndFinish = useCallback(async (connectPOS?: string) => {
+    setSaving(true);
     try {
       const userId = await getUserId();
-      const toSave = scannedRecipes.filter((_, i) => !removedIndices.has(i));
+      const kept = scannedRecipes.filter((_, i) => !removedIndices.has(i));
 
-      for (const r of toSave) {
+      // 1. Create ingredients from stock items
+      const ingredientMap = new Map<string, string>(); // name -> id
+      for (const item of stockItems) {
+        const { data: ing, error } = await supabase
+          .from('ingredients')
+          .insert({
+            name: item.name,
+            unit: item.unit,
+            current_stock: parseFloat(item.currentStock) || 0,
+            storage_type: item.storage,
+            is_perishable: item.isPerishable,
+            shelf_life_days: item.shelfLifeDays ? parseInt(item.shelfLifeDays) : null,
+            user_id: userId,
+          })
+          .select()
+          .single();
+        if (!error && ing) {
+          ingredientMap.set(item.name.toLowerCase().trim(), ing.id);
+        }
+      }
+
+      // 2. Create recipes and link ingredients
+      for (const r of kept) {
         const { data: recipe, error: re } = await supabase
           .from('recipes')
           .insert({ name: r.name, status: 'draft', user_id: userId })
@@ -121,47 +189,62 @@ export const OnboardingWizard = ({ restaurantName: initialName }: OnboardingWiza
           unit: ing.unit,
           confidence: 0.75,
           user_id: userId,
+          ingredient_id: ingredientMap.get(ing.name.toLowerCase().trim()) || null,
         }));
         if (ings.length > 0) await supabase.from('recipe_ingredients').insert(ings);
       }
 
+      // 3. Mark onboarding complete
       await updateProfile.mutateAsync({
         restaurant_name: name || undefined,
         onboarding_completed: true,
       });
 
       qc.invalidateQueries({ queryKey: ['recipes-with-ingredients'] });
-      toast.success('Setup complete!');
+      qc.invalidateQueries({ queryKey: ['ingredients'] });
+      toast.success('Setup complete! Welcome to Mise en Place 🎉');
     } catch {
       toast.error('Failed to save — please try again');
+    } finally {
+      setSaving(false);
     }
-  }, [scannedRecipes, removedIndices, name, updateProfile, qc]);
+  }, [scannedRecipes, removedIndices, stockItems, name, updateProfile, qc]);
 
-  const skipAndFinish = useCallback(async () => {
-    await updateProfile.mutateAsync({
-      restaurant_name: name || undefined,
-      onboarding_completed: true,
-    });
-    toast.success('Setup complete!');
+  const skipMenuAndFinish = useCallback(async () => {
+    setSaving(true);
+    try {
+      await updateProfile.mutateAsync({
+        restaurant_name: name || undefined,
+        onboarding_completed: true,
+      });
+      toast.success('Setup complete!');
+    } catch {
+      toast.error('Failed — please try again');
+    } finally {
+      setSaving(false);
+    }
   }, [name, updateProfile]);
 
   const activeCount = scannedRecipes.filter((_, i) => !removedIndices.has(i)).length;
+  const countedItems = stockItems.filter(i => i.currentStock !== '' && parseFloat(i.currentStock) > 0).length;
 
   const steps = [
     { title: 'Welcome', icon: '🍽' },
-    { title: 'Upload Menu', icon: '📸' },
-    { title: 'Review', icon: '✅' },
+    { title: 'Menu', icon: '📸' },
+    { title: 'Recipes', icon: '📋' },
+    { title: 'Stock Count', icon: '🔢' },
+    { title: 'POS', icon: '💳' },
   ];
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center px-4">
+    <div className="min-h-screen bg-background flex items-center justify-center px-4 py-8">
       <input ref={fileRef} type="file" accept="image/*,.pdf" className="hidden" onChange={e => { if (e.target.files?.[0]) scanMenuPhoto(e.target.files[0]); e.target.value = ''; }} />
 
-      <div className="w-full max-w-lg">
+      <div className="w-full max-w-xl">
         {/* Progress */}
-        <div className="flex items-center justify-center gap-2 mb-8">
+        <div className="flex items-center justify-center gap-1.5 mb-8">
           {steps.map((s, i) => (
-            <div key={i} className="flex items-center gap-2">
+            <div key={i} className="flex items-center gap-1.5">
               <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all ${
                 i < step ? 'bg-primary text-primary-foreground' :
                 i === step ? 'bg-primary text-primary-foreground ring-4 ring-primary/20' :
@@ -170,7 +253,7 @@ export const OnboardingWizard = ({ restaurantName: initialName }: OnboardingWiza
                 {i < step ? '✓' : s.icon}
               </div>
               {i < steps.length - 1 && (
-                <div className={`w-12 h-0.5 rounded ${i < step ? 'bg-primary' : 'bg-border'}`} />
+                <div className={`w-8 h-0.5 rounded ${i < step ? 'bg-primary' : 'bg-border'}`} />
               )}
             </div>
           ))}
@@ -237,10 +320,7 @@ export const OnboardingWizard = ({ restaurantName: initialName }: OnboardingWiza
               </div>
             </div>
 
-            <button
-              className="w-full text-sm text-muted-foreground hover:text-foreground py-2"
-              onClick={skipAndFinish}
-            >
+            <button className="w-full text-sm text-muted-foreground hover:text-foreground py-2" onClick={skipMenuAndFinish}>
               Skip for now — I'll add recipes manually
             </button>
           </div>
@@ -279,20 +359,20 @@ export const OnboardingWizard = ({ restaurantName: initialName }: OnboardingWiza
           <div className="bg-card border border-border rounded-2xl p-8 text-center shadow-sm animate-fade-up">
             <div className="text-4xl mb-3">🎉</div>
             <div className="font-bold text-lg text-foreground mb-1.5">Found {scannedRecipes.length} menu items!</div>
-            <div className="text-sm text-muted-foreground mb-5">Review and edit them before we save.</div>
+            <div className="text-sm text-muted-foreground mb-5">Review and edit them in the next step.</div>
             <Button className="w-full" onClick={() => setStep(2)}>Review Recipes →</Button>
           </div>
         )}
 
-        {/* Step 2: Review & Verify */}
+        {/* Step 2: Review Recipes */}
         {step === 2 && (
           <div className="bg-card border border-border rounded-2xl p-6 shadow-sm animate-fade-up">
             <h2 className="text-xl font-extrabold text-foreground text-center mb-1">Review Your Recipes</h2>
             <p className="text-muted-foreground text-sm text-center mb-4">
-              Edit names, adjust ingredients, or remove items. {activeCount} of {scannedRecipes.length} will be saved as drafts.
+              Edit names, adjust ingredients, or remove items. {activeCount} of {scannedRecipes.length} will be saved.
             </p>
 
-            <div className="max-h-[400px] overflow-y-auto space-y-2 mb-5 pr-1">
+            <div className="max-h-[380px] overflow-y-auto space-y-2 mb-5 pr-1">
               {scannedRecipes.map((r, i) => {
                 const removed = removedIndices.has(i);
                 return (
@@ -305,7 +385,7 @@ export const OnboardingWizard = ({ restaurantName: initialName }: OnboardingWiza
                         disabled={removed}
                       />
                       <button
-                        className={`text-xs px-2 py-1 rounded-md border transition-colors ${removed ? 'border-primary/30 text-primary hover:bg-primary/10' : 'border-destructive/30 text-destructive hover:bg-destructive/10'}`}
+                        className={`text-xs px-2 py-1 rounded-md border transition-colors shrink-0 ${removed ? 'border-primary/30 text-primary hover:bg-primary/10' : 'border-destructive/30 text-destructive hover:bg-destructive/10'}`}
                         onClick={() => toggleRemoveRecipe(i)}
                       >
                         {removed ? '↩ Restore' : '✕ Remove'}
@@ -338,19 +418,147 @@ export const OnboardingWizard = ({ restaurantName: initialName }: OnboardingWiza
                   </div>
                 );
               })}
-              {scannedRecipes.length === 0 && (
-                <div className="text-center text-muted-foreground py-8">No recipes found</div>
-              )}
             </div>
 
             <div className="flex gap-2">
-              <Button className="flex-1" size="lg" onClick={saveRecipesAndFinish} disabled={activeCount === 0}>
-                Save {activeCount} Recipe{activeCount !== 1 ? 's' : ''} & Start 🚀
+              <Button className="flex-1" size="lg" onClick={goToStockCount} disabled={activeCount === 0}>
+                Next: Stock Count →
               </Button>
               <Button variant="outline" onClick={() => { setStep(1); setScanState('idle'); }}>
                 ← Back
               </Button>
             </div>
+          </div>
+        )}
+
+        {/* Step 3: First Stock Count */}
+        {step === 3 && (
+          <div className="bg-card border border-border rounded-2xl p-6 shadow-sm animate-fade-up">
+            <h2 className="text-xl font-extrabold text-foreground text-center mb-1">First Stock Count</h2>
+            <p className="text-muted-foreground text-sm text-center mb-1">
+              Enter how much of each ingredient you currently have on hand.
+            </p>
+            <p className="text-muted-foreground text-xs text-center mb-4">
+              {countedItems} of {stockItems.length} counted · You can update these later
+            </p>
+
+            <div className="max-h-[400px] overflow-y-auto space-y-2 mb-5 pr-1">
+              {stockItems.map((item, i) => (
+                <div key={i} className="border border-border rounded-lg p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="font-bold text-sm flex-1">{item.name}</span>
+                    <span className="text-[11px] text-muted-foreground font-mono">{item.unit}</span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">Qty on Hand</label>
+                      <input
+                        type="number"
+                        className="w-full px-2 py-1.5 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 font-mono"
+                        placeholder="0"
+                        value={item.currentStock}
+                        onChange={e => updateStockItem(i, 'currentStock', e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">Storage</label>
+                      <select
+                        className="w-full px-2 py-1.5 border border-border rounded-md text-sm bg-background"
+                        value={item.storage}
+                        onChange={e => updateStockItem(i, 'storage', e.target.value)}
+                      >
+                        <option value="room">🏠 Room</option>
+                        <option value="fridge">❄️ Fridge</option>
+                        <option value="freezer">🧊 Freezer</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">Perishable?</label>
+                      <button
+                        className={`w-full px-2 py-1.5 border rounded-md text-sm transition-colors ${item.isPerishable ? 'bg-primary/10 border-primary text-primary' : 'bg-background border-border text-muted-foreground'}`}
+                        onClick={() => updateStockItem(i, 'isPerishable', !item.isPerishable)}
+                      >
+                        {item.isPerishable ? '🌿 Yes' : 'No'}
+                      </button>
+                    </div>
+                    {item.isPerishable && (
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">Shelf Life (days)</label>
+                        <input
+                          type="number"
+                          className="w-full px-2 py-1.5 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 font-mono"
+                          placeholder="7"
+                          value={item.shelfLifeDays}
+                          onChange={e => updateStockItem(i, 'shelfLifeDays', e.target.value)}
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {stockItems.length === 0 && (
+                <div className="text-center text-muted-foreground py-8">No ingredients found</div>
+              )}
+            </div>
+
+            <div className="flex gap-2">
+              <Button className="flex-1" size="lg" onClick={() => setStep(4)}>
+                Next: Connect POS →
+              </Button>
+              <Button variant="outline" onClick={() => setStep(2)}>
+                ← Back
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 4: Connect POS */}
+        {step === 4 && (
+          <div className="bg-card border border-border rounded-2xl p-8 shadow-sm animate-fade-up">
+            <h2 className="text-xl font-extrabold text-foreground text-center mb-2">Connect Your POS</h2>
+            <p className="text-muted-foreground text-sm text-center mb-6">
+              Link your point-of-sale system to automatically track sales and deduct inventory.
+            </p>
+
+            <div className="grid gap-2.5 mb-6">
+              {POS_SYSTEMS.map(pos => (
+                <button
+                  key={pos.id}
+                  className="flex items-center gap-3 p-4 border border-border rounded-xl text-left hover:border-primary/50 hover:bg-primary/5 transition-all group"
+                  onClick={() => toast.info(`${pos.name} integration coming soon!`)}
+                >
+                  <span className="text-2xl">{pos.icon}</span>
+                  <div className="flex-1">
+                    <div className="font-bold text-sm text-foreground">{pos.name}</div>
+                    <div className="text-xs text-muted-foreground">{pos.desc}</div>
+                  </div>
+                  <span className="text-xs text-muted-foreground group-hover:text-primary transition-colors">Connect →</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="bg-muted/50 border border-border rounded-lg px-4 py-3 mb-5 text-center">
+              <div className="text-xs text-muted-foreground">
+                💡 You can also record sales manually or import CSV files from the Sales tab.
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <Button className="flex-1" size="lg" onClick={() => saveAndFinish()} disabled={saving}>
+                {saving ? 'Setting up…' : 'Finish Setup 🚀'}
+              </Button>
+              <Button variant="outline" onClick={() => setStep(3)} disabled={saving}>
+                ← Back
+              </Button>
+            </div>
+
+            <button
+              className="w-full text-sm text-muted-foreground hover:text-foreground py-2 mt-2"
+              onClick={() => saveAndFinish()}
+              disabled={saving}
+            >
+              Skip POS — I'll connect later
+            </button>
           </div>
         )}
       </div>

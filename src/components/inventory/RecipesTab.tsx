@@ -181,10 +181,44 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
 
   const verifyRecipe = useCallback(async (id: string) => {
     const r = recipes.find(x => x.id === id);
+    if (!r) return;
+
+    // Auto-create missing ingredients in inventory
+    try {
+      const userId = await getUserId();
+      for (const ri of r.ingredients) {
+        if (ri.ingredient_id) continue; // already linked
+        // Check if ingredient with this name already exists
+        const { data: existing } = await supabase
+          .from('ingredients')
+          .select('id')
+          .eq('user_id', userId)
+          .ilike('name', ri.name)
+          .maybeSingle();
+
+        let ingredientId = existing?.id;
+        if (!ingredientId) {
+          const { data: newIng } = await supabase
+            .from('ingredients')
+            .insert({ name: ri.name, unit: ri.unit, user_id: userId, current_stock: 0 })
+            .select('id')
+            .single();
+          ingredientId = newIng?.id;
+        }
+
+        if (ingredientId) {
+          await supabase.from('recipe_ingredients').update({ ingredient_id: ingredientId }).eq('id', ri.id);
+        }
+      }
+    } catch (e) {
+      console.error('Auto-link ingredients failed:', e);
+    }
+
     const { error } = await supabase.from('recipes').update({ status: 'verified', verified_by: 'Manager', verified_date: new Date().toLocaleDateString() }).eq('id', id);
     if (error) { toast.error('Failed to verify'); return; }
     qc.invalidateQueries({ queryKey: ['recipes-with-ingredients'] });
-    toast.success(`"${r?.name}" verified`);
+    qc.invalidateQueries({ queryKey: ['ingredients'] });
+    toast.success(`"${r.name}" verified — ingredients added to inventory`);
     setSelectedRId(null);
   }, [recipes, qc]);
 
