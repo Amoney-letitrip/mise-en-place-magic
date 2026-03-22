@@ -51,7 +51,7 @@ export const DashboardTab = ({
         >
           <div className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground mb-2">⚠ Stockout Risk</div>
           <div className={`text-4xl font-extrabold leading-none mb-1 ${stockoutRisk.length ? 'text-destructive' : 'text-muted-foreground/30'}`}>{stockoutRisk.length}</div>
-          <div className="text-xs text-muted-foreground">{stockoutRisk.length ? stockoutRisk.map(i => i.name).join(', ') : 'All good'}</div>
+          <div className="text-xs text-muted-foreground">{stockoutRisk.length ? (stockoutRisk.length <= 3 ? stockoutRisk.map(i => i.name).join(', ') : `${stockoutRisk.slice(0, 3).map(i => i.name).join(', ')} +${stockoutRisk.length - 3} more`) : 'All good'}</div>
         </button>
 
         <button

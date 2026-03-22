@@ -121,7 +121,7 @@ export const InventoryTab = ({
         <>
           {lowItems.length > 0 && (
             <div className="bg-red-50 border border-red-300 rounded-lg px-3.5 py-2.5 mb-3 text-[13px] text-red-700 flex gap-2">
-              🚨 <strong>{lowItems.map(i => i.name).join(', ')}</strong> below reorder threshold
+              🚨 <strong>{lowItems.length <= 3 ? lowItems.map(i => i.name).join(', ') : `${lowItems.slice(0, 3).map(i => i.name).join(', ')} +${lowItems.length - 3} more`}</strong> below reorder threshold
             </div>
           )}
 

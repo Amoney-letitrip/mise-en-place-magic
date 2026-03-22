@@ -124,14 +124,13 @@ export const useAppState = () => {
       s.push({ icon: '🗑', text: `Log waste for ${expiredLots.length} expired lot${expiredLots.length > 1 ? 's' : ''}`, tab: 'inventory' });
     }
     if (expiringLots.length > 0) {
-      const names = [...new Set(expiringLots.map(l => ingredients.find(i => i.id === l.ingredient_id)?.name))].filter(Boolean);
-      s.push({ icon: '⚡', text: `Use up expiring stock today (${names.join(', ')})`, tab: 'inventory' });
+      s.push({ icon: '⚡', text: `${expiringLots.length} ingredient${expiringLots.length > 1 ? 's' : ''} expiring soon — use or log waste`, tab: 'inventory' });
     }
     if (draftRecipes.length > 0) {
-      s.push({ icon: '📋', text: `Verify ${draftRecipes.map(r => r.name).join(', ')} — unverified recipes skip inventory tracking`, tab: 'recipes' });
+      s.push({ icon: '📋', text: `${draftRecipes.length} recipe${draftRecipes.length > 1 ? 's' : ''} need${draftRecipes.length === 1 ? 's' : ''} verification — verify to start tracking inventory`, tab: 'recipes' });
     }
     return s.slice(0, 5);
-  }, [orderDraft, expiredLots, expiringLots, draftRecipes, ingredients]);
+  }, [orderDraft, expiredLots, expiringLots, draftRecipes]);
 
   const logWaste = useCallback(async (lot: typeof lots[0]) => {
     const ing = ingredients.find(i => i.id === lot.ingredient_id);
