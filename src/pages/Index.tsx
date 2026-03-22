@@ -54,7 +54,14 @@ const Index = () => {
 
   return (
     <div className={`min-h-screen bg-background ${isMobile ? 'pb-[70px]' : ''}`}>
-      <AppNav tab={state.tab} setTab={state.setTab} fefo={state.fefo} setFefo={state.setFefo} navItems={navItems} />
+      <AppNav
+        tab={state.tab}
+        setTab={state.setTab}
+        fefo={state.fefo}
+        setFefo={state.setFefo}
+        navItems={navItems}
+        restaurantName={profile?.restaurant_name}
+      />
 
       <div className="max-w-content mx-auto px-4 py-5">
         {state.tab === 'dashboard' && (
@@ -67,6 +74,7 @@ const Index = () => {
             suggestions={state.suggestions}
             fefo={state.fefo}
             setTab={state.setTab}
+            restaurantName={profile?.restaurant_name}
           />
         )}
 
@@ -117,6 +125,7 @@ const Index = () => {
           <CostsTab
             ingredients={state.ingredients}
             recipes={state.recipes}
+            setTab={state.setTab}
           />
         )}
       </div>

@@ -14,9 +14,10 @@ interface AppNavProps {
   fefo: boolean;
   setFefo: (v: boolean) => void;
   navItems: NavItem[];
+  restaurantName?: string | null;
 }
 
-export const AppNav = ({ tab, setTab, fefo, setFefo, navItems }: AppNavProps) => {
+export const AppNav = ({ tab, setTab, fefo, setFefo, navItems, restaurantName }: AppNavProps) => {
   const { signOut, user } = useAuth();
   const isMobile = useIsMobile();
 
@@ -26,7 +27,11 @@ export const AppNav = ({ tab, setTab, fefo, setFefo, navItems }: AppNavProps) =>
         {/* Logo */}
         <div className="flex items-center gap-2 mr-5 flex-shrink-0">
           <div className="w-[30px] h-[30px] bg-primary rounded-lg flex items-center justify-center text-base">🍽</div>
-          {!isMobile && <span className="font-extrabold text-[15px] text-foreground tracking-tight">Mise en Place</span>}
+          {!isMobile && (
+            <span className="font-extrabold text-[15px] text-foreground tracking-tight">
+              {restaurantName || 'Mise en Place'}
+            </span>
+          )}
         </div>
 
         {/* Nav tabs - hidden on mobile (bottom nav used instead) */}

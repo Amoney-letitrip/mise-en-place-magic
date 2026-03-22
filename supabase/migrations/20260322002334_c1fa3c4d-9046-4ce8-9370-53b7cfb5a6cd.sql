@@ -1,0 +1,1 @@
+ALTER TABLE public.recipes ADD COLUMN menu_price NUMERIC NOT NULL DEFAULT 0;

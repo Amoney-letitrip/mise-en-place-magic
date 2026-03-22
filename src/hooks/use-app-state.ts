@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useIngredients, useLots, useSales, useRecipesWithIngredients, useVendors, useUpdateIngredient, useUpdateLot, useCreateLot, useBulkUpdateIngredients } from '@/hooks/use-inventory-data';
-import { computeForecast, diffDays, buildCycleList, depleteOrdered, addDays } from '@/lib/inventory-utils';
+import { computeForecast, diffDays } from '@/lib/inventory-utils';
 import type { TabId } from '@/lib/types';
 import { toast } from 'sonner';
 
@@ -54,11 +54,16 @@ export const useAppState = () => {
     [sales]
   );
 
+  // Only count sales from the last 7 days for ADU forecast
   const salesByItem = useMemo(() => {
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
     const counts: Record<string, number> = {};
-    sales.filter(s => s.status === 'processed').forEach(s => {
-      counts[s.item] = (counts[s.item] || 0) + s.qty;
-    });
+    sales
+      .filter(s => s.status === 'processed' && new Date(s.created_at) >= sevenDaysAgo)
+      .forEach(s => {
+        counts[s.item] = (counts[s.item] || 0) + s.qty;
+      });
     return counts;
   }, [sales]);
 

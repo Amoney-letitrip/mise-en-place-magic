@@ -4,6 +4,9 @@ import { Button } from '@/components/ui/button';
 import { diffDays, fmtDate, fmtN, buildCycleList, DISCREPANCY_REASONS } from '@/lib/inventory-utils';
 import type { Database } from '@/integrations/supabase/types';
 import { LotsModal } from './LotsModal';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { toast } from 'sonner';
+import { useDeleteIngredient } from '@/hooks/use-inventory-data';
 
 type Ingredient = Database['public']['Tables']['ingredients']['Row'];
 type Lot = Database['public']['Tables']['lots']['Row'];
@@ -26,6 +29,8 @@ export const InventoryTab = ({
   const [lotsModal, setLotsModal] = useState<Ingredient | null>(null);
   const [cycleItems, setCycleItems] = useState<any[] | null>(null);
   const [cycleSubmitted, setCycleSubmitted] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Ingredient | null>(null);
+  const deleteIngredient = useDeleteIngredient();
 
   const now = new Date();
 
@@ -67,6 +72,17 @@ export const InventoryTab = ({
         }
         return new Date(a.received_at).getTime() - new Date(b.received_at).getTime();
       });
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget) return;
+    try {
+      await deleteIngredient.mutateAsync(deleteTarget.id);
+      toast.success(`"${deleteTarget.name}" deleted`);
+      setDeleteTarget(null);
+    } catch {
+      toast.error('Failed to delete ingredient');
+    }
+  };
 
   return (
     <div className="animate-fade-up">
@@ -204,6 +220,13 @@ export const InventoryTab = ({
                         <td className="px-3.5 py-2.5">
                           <div className="flex gap-1.5">
                             {ing.vendor && <Button variant="outline" size="sm">Reorder</Button>}
+                            <button
+                              onClick={() => setDeleteTarget(ing)}
+                              className="text-muted-foreground/50 hover:text-destructive transition-colors p-1"
+                              title="Delete ingredient"
+                            >
+                              🗑
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -339,6 +362,24 @@ export const InventoryTab = ({
           onClose={() => setLotsModal(null)}
         />
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!deleteTarget} onOpenChange={open => { if (!open) setDeleteTarget(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete {deleteTarget?.name}?</DialogTitle>
+            <DialogDescription>
+              This will also remove all lots and recipe links for this ingredient. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleDeleteConfirm} disabled={deleteIngredient.isPending}>
+              {deleteIngredient.isPending ? 'Deleting…' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
