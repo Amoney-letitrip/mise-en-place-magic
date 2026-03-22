@@ -208,6 +208,20 @@ export const OnboardingWizard = ({ restaurantName: initialName }: OnboardingWiza
     return Array.from(seen.values()).sort((a, b) => a.name.localeCompare(b.name));
   }, [scannedRecipes, removedIndices]);
 
+  const dedupeRecipes = useCallback((recipes: ScannedRecipe[]) => {
+    const seen = new Set<string>();
+    const deduped: ScannedRecipe[] = [];
+    for (const r of recipes) {
+      const key = r.name.toLowerCase().trim();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(r);
+    }
+    const removed = recipes.length - deduped.length;
+    if (removed > 0) toast.info(`Removed ${removed} duplicate item${removed > 1 ? 's' : ''}`);
+    return deduped;
+  }, []);
+
   const scanMenuPhoto = useCallback(async (file: File) => {
     setScanState('scanning');
     setMenuPreviewUrl(URL.createObjectURL(file));
@@ -223,7 +237,7 @@ export const OnboardingWizard = ({ restaurantName: initialName }: OnboardingWiza
         body: { type: 'photo', base64, mediaType },
       });
       if (fnError) throw fnError;
-      const recipes = fnData?.recipes || [];
+      const recipes = dedupeRecipes(fnData?.recipes || []);
       setScannedRecipes(recipes);
       setRemovedIndices(new Set());
       setScanState('done');
@@ -232,7 +246,7 @@ export const OnboardingWizard = ({ restaurantName: initialName }: OnboardingWiza
       setScanState('error');
       toast.error('Scan failed — please try again');
     }
-  }, []);
+  }, [dedupeRecipes]);
 
   const scanMenuUrl = useCallback(async (url: string) => {
     setScanState('scanning');
@@ -242,7 +256,7 @@ export const OnboardingWizard = ({ restaurantName: initialName }: OnboardingWiza
         body: { type: 'url', url },
       });
       if (fnError) throw fnError;
-      const recipes = fnData?.recipes || [];
+      const recipes = dedupeRecipes(fnData?.recipes || []);
       setScannedRecipes(recipes);
       setRemovedIndices(new Set());
       setScanState('done');
@@ -251,7 +265,7 @@ export const OnboardingWizard = ({ restaurantName: initialName }: OnboardingWiza
       setScanState('error');
       toast.error('Scan failed — try uploading a photo instead');
     }
-  }, []);
+  }, [dedupeRecipes]);
 
   const toggleRemoveRecipe = useCallback((index: number) => {
     setRemovedIndices(prev => {

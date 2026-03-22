@@ -26,12 +26,13 @@ const Index = () => {
     }
   }, [loadingProfile, profile]);
 
-  const navItems: Array<{ id: TabId; label: string; badge?: number | null }> = [
+  const capBadge = (n: number) => n > 99 ? 99 : n;
+  const navItems: Array<{ id: TabId; label: string; badge?: number | null; badgeLabel?: string }> = [
     { id: 'dashboard', label: 'Dashboard' },
-    { id: 'inventory', label: 'Inventory', badge: state.lowItems.length || null },
-    { id: 'orders', label: 'Orders', badge: state.orderDraft.filter(v => v.anyDue).length || null },
-    { id: 'sales', label: 'Sales', badge: state.flaggedSales.length || null },
-    { id: 'recipes', label: 'Recipes', badge: state.draftRecipes.length || null },
+    { id: 'inventory', label: 'Inventory', badge: capBadge(state.lowItems.length) || null, badgeLabel: state.lowItems.length > 99 ? '99+' : undefined },
+    { id: 'orders', label: 'Orders', badge: capBadge(state.orderDraft.filter(v => v.anyDue).length) || null },
+    { id: 'sales', label: 'Sales', badge: capBadge(state.flaggedSales.length) || null },
+    { id: 'recipes', label: 'Recipes', badge: capBadge(state.draftRecipes.length) || null, badgeLabel: state.draftRecipes.length > 99 ? '99+' : undefined },
     { id: 'costs', label: 'Costs' },
   ];
 
