@@ -1,6 +1,7 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useMemo } from 'react';
 import { StatusTag, SectionHead } from './StatusTag';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import type { Database } from '@/integrations/supabase/types';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -52,7 +53,11 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
   const [scannedRecipes, setScannedRecipes] = useState<ScannedRecipe[]>([]);
   const [removedIndices, setRemovedIndices] = useState<Set<number>>(new Set());
   const [deleteTarget, setDeleteTarget] = useState<RecipeWithIngredients | null>(null);
-  
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'draft' | 'verified'>('all');
+  const [bulkAction, setBulkAction] = useState<'verifyAll' | 'deleteAllDrafts' | null>(null);
+  const [bulkProgress, setBulkProgress] = useState<{ current: number; total: number } | null>(null);
+
   const fileRef = useRef<HTMLInputElement>(null);
   const qc = useQueryClient();
   const deleteRecipe = useDeleteRecipe();
@@ -65,6 +70,20 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
     if (!user) throw new Error('Not authenticated');
     return user.id;
   };
+
+  const dedupeRecipes = useCallback((rawRecipes: ScannedRecipe[]) => {
+    const seen = new Set<string>();
+    const deduped: ScannedRecipe[] = [];
+    for (const r of rawRecipes) {
+      const key = r.name.toLowerCase().trim();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(r);
+    }
+    const removed = rawRecipes.length - deduped.length;
+    if (removed > 0) toast.info(`Removed ${removed} duplicate item${removed > 1 ? 's' : ''}`);
+    return deduped;
+  }, []);
 
   const scanMenuPhoto = useCallback(async (file: File) => {
     setMenuScanState('scanning');
@@ -82,7 +101,7 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
         body: { type: 'photo', base64, mediaType },
       });
       if (fnError) throw fnError;
-      const newRecipes = fnData?.recipes || [];
+      const newRecipes = dedupeRecipes(fnData?.recipes || []);
       setScannedRecipes(newRecipes);
       setRemovedIndices(new Set());
       setMenuScanState('review');
@@ -92,7 +111,7 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
       setMenuScanState('error');
       toast.error('Scan failed — please try again');
     }
-  }, []);
+  }, [dedupeRecipes]);
 
   const scanMenuUrl = useCallback(async (url: string) => {
     setMenuScanState('scanning');
@@ -103,7 +122,7 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
         body: { type: 'url', url },
       });
       if (fnError) throw fnError;
-      const newRecipes = fnData?.recipes || [];
+      const newRecipes = dedupeRecipes(fnData?.recipes || []);
       setScannedRecipes(newRecipes);
       setRemovedIndices(new Set());
       setMenuScanState('review');
@@ -113,13 +132,20 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
       setMenuScanState('error');
       toast.error('Scan failed — try uploading a photo instead');
     }
-  }, []);
+  }, [dedupeRecipes]);
 
   const saveScannedRecipes = useCallback(async () => {
     try {
       const userId = await getUserId();
       const toSave = scannedRecipes.filter((_, i) => !removedIndices.has(i));
-      for (const r of toSave) {
+
+      // Check for existing recipes by name
+      const existingNames = new Set(recipes.map(r => r.name.toLowerCase().trim()));
+      const filtered = toSave.filter(r => !existingNames.has(r.name.toLowerCase().trim()));
+      const skipped = toSave.length - filtered.length;
+      if (skipped > 0) toast.info(`Skipped ${skipped} recipe${skipped > 1 ? 's' : ''} that already exist`);
+
+      for (const r of filtered) {
         const { data: recipe, error: re } = await supabase
           .from('recipes')
           .insert({ name: r.name, status: 'draft', user_id: userId })
@@ -141,12 +167,12 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
       setShowScanUI(false);
       setScannedRecipes([]);
       setRemovedIndices(new Set());
-      toast.success(`${toSave.length} draft recipes created — verify them to start tracking inventory`);
+      toast.success(`${filtered.length} draft recipes created — verify them to start tracking inventory`);
     } catch (err) {
       console.error(err);
       toast.error('Failed to save recipes');
     }
-  }, [scannedRecipes, removedIndices, qc]);
+  }, [scannedRecipes, removedIndices, qc, recipes]);
 
   const toggleRemoveRecipe = useCallback((index: number) => {
     setRemovedIndices(prev => {
@@ -220,6 +246,69 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
     setSelectedRId(null);
   }, [recipes, qc]);
 
+  const verifyAllDrafts = useCallback(async () => {
+    setBulkAction(null);
+    const drafts = recipes.filter(r => r.status === 'draft');
+    setBulkProgress({ current: 0, total: drafts.length });
+    try {
+      const userId = await getUserId();
+      for (let i = 0; i < drafts.length; i++) {
+        const r = drafts[i];
+        setBulkProgress({ current: i + 1, total: drafts.length });
+        for (const ri of r.ingredients) {
+          if (ri.ingredient_id) continue;
+          const { data: existing } = await supabase
+            .from('ingredients')
+            .select('id')
+            .eq('user_id', userId)
+            .ilike('name', ri.name)
+            .maybeSingle();
+          let ingredientId = existing?.id;
+          if (!ingredientId) {
+            const { data: newIng } = await supabase
+              .from('ingredients')
+              .insert({ name: ri.name, unit: ri.unit, user_id: userId, current_stock: 0 })
+              .select('id')
+              .single();
+            ingredientId = newIng?.id;
+          }
+          if (ingredientId) {
+            await supabase.from('recipe_ingredients').update({ ingredient_id: ingredientId }).eq('id', ri.id);
+          }
+        }
+        await supabase.from('recipes').update({ status: 'verified', verified_by: 'Manager', verified_date: new Date().toLocaleDateString() }).eq('id', r.id);
+      }
+      qc.invalidateQueries({ queryKey: ['recipes-with-ingredients'] });
+      qc.invalidateQueries({ queryKey: ['ingredients'] });
+      toast.success(`${drafts.length} recipes verified!`);
+    } catch (e) {
+      console.error(e);
+      toast.error('Bulk verify failed');
+    } finally {
+      setBulkProgress(null);
+    }
+  }, [recipes, qc]);
+
+  const deleteAllDrafts = useCallback(async () => {
+    setBulkAction(null);
+    const drafts = recipes.filter(r => r.status === 'draft');
+    setBulkProgress({ current: 0, total: drafts.length });
+    try {
+      for (let i = 0; i < drafts.length; i++) {
+        setBulkProgress({ current: i + 1, total: drafts.length });
+        await supabase.from('recipe_ingredients').delete().eq('recipe_id', drafts[i].id);
+        await supabase.from('recipes').delete().eq('id', drafts[i].id);
+      }
+      qc.invalidateQueries({ queryKey: ['recipes-with-ingredients'] });
+      toast.success(`${drafts.length} draft recipes deleted`);
+    } catch (e) {
+      console.error(e);
+      toast.error('Bulk delete failed');
+    } finally {
+      setBulkProgress(null);
+    }
+  }, [recipes, qc]);
+
   const updateRecipeIngredient = useCallback(async (riId: string, updates: Record<string, any>) => {
     await supabase.from('recipe_ingredients').update(updates).eq('id', riId);
     qc.invalidateQueries({ queryKey: ['recipes-with-ingredients'] });
@@ -245,16 +334,53 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
   const showScanArea = showScanUI || recipes.length === 0;
   const activeScannedCount = scannedRecipes.filter((_, i) => !removedIndices.has(i)).length;
 
+  // Filtered recipes
+  const filteredRecipes = useMemo(() => {
+    let list = recipes;
+    if (filterStatus === 'draft') list = list.filter(r => r.status === 'draft');
+    else if (filterStatus === 'verified') list = list.filter(r => r.status === 'verified');
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      list = list.filter(r => r.name.toLowerCase().includes(q));
+    }
+    return list;
+  }, [recipes, filterStatus, searchQuery]);
+
+  const verifiedCount = recipes.filter(r => r.status === 'verified').length;
+
   return (
     <div className="animate-fade-up">
       <input ref={fileRef} type="file" accept="image/*,.pdf" className="hidden" onChange={e => { if (e.target.files?.[0]) scanMenuPhoto(e.target.files[0]); e.target.value = ''; }} />
+
+      {/* Bulk progress overlay */}
+      {bulkProgress && (
+        <div className="fixed inset-0 bg-background/80 z-50 flex items-center justify-center">
+          <div className="bg-card border border-border rounded-xl p-8 text-center shadow-lg max-w-sm">
+            <div className="text-3xl mb-3 animate-pulse">⏳</div>
+            <div className="font-bold text-foreground mb-1">Processing… {bulkProgress.current}/{bulkProgress.total}</div>
+            <div className="h-2 bg-muted rounded-full overflow-hidden mt-3">
+              <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${(bulkProgress.current / bulkProgress.total) * 100}%` }} />
+            </div>
+          </div>
+        </div>
+      )}
 
       {!selectedRId ? (
         <>
           <SectionHead
             title="Recipes"
-            sub={`${recipes.filter(r => r.status === 'verified').length} verified · ${draftRecipes.length} draft`}
-            action={recipes.length > 0 && !showScanUI ? <Button onClick={openRescan}>📸 Re-scan Menu</Button> : undefined}
+            sub={`${verifiedCount} verified · ${draftRecipes.length} draft`}
+            action={recipes.length > 0 && !showScanUI ? (
+              <div className="flex gap-2 flex-wrap">
+                {draftRecipes.length > 0 && (
+                  <>
+                    <Button variant="outline" size="sm" onClick={() => setBulkAction('verifyAll')}>✓ Verify All ({draftRecipes.length})</Button>
+                    <Button variant="outline" size="sm" className="text-destructive border-destructive/30 hover:bg-destructive/10" onClick={() => setBulkAction('deleteAllDrafts')}>🗑 Delete Drafts</Button>
+                  </>
+                )}
+                <Button size="sm" onClick={openRescan}>📸 Scan Menu</Button>
+              </div>
+            ) : undefined}
           />
 
           {recipes.length > 0 && !showScanUI && (
@@ -426,48 +552,85 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
             </div>
           )}
 
-          {/* RECIPE LIST */}
+          {/* RECIPE LIST — compact view with search & filter */}
           {recipes.length > 0 && !showScanUI && subTab === 'list' && (
             <>
-              {draftRecipes.length > 0 && (
+              {/* Search bar */}
+              <div className="mb-3">
+                <Input
+                  placeholder="Search recipes…"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="max-w-sm"
+                />
+              </div>
+
+              {/* Filter tabs */}
+              <div className="flex gap-2 mb-3">
+                {(['all', 'draft', 'verified'] as const).map(f => {
+                  const count = f === 'all' ? recipes.length : f === 'draft' ? draftRecipes.length : verifiedCount;
+                  return (
+                    <button
+                      key={f}
+                      onClick={() => setFilterStatus(f)}
+                      className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${filterStatus === f ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'}`}
+                    >
+                      {f === 'all' ? 'All' : f === 'draft' ? 'Drafts' : 'Verified'} ({count})
+                    </button>
+                  );
+                })}
+              </div>
+
+              {draftRecipes.length > 0 && filterStatus !== 'verified' && (
                 <div className="bg-amber-50 border border-amber-200 rounded-lg px-3.5 py-2.5 mb-3 text-[13px] text-amber-700 flex gap-2">
                   💡 <strong>{draftRecipes.length} unverified recipe{draftRecipes.length > 1 ? 's' : ''}</strong> — verify so sales start tracking inventory.
                 </div>
               )}
-              <div className="grid gap-2.5">
-                {recipes.map(r => (
-                  <div
-                    key={r.id}
-                    className={`bg-card border rounded-lg p-4 cursor-pointer transition-colors hover:border-primary/50 ${r.status === 'draft' ? 'border-amber-200' : 'border-border'}`}
-                    onClick={() => setSelectedRId(r.id)}
-                  >
-                    <div className="flex justify-between items-start gap-3.5">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1.5">
-                          <span className="font-bold text-[15px]">{r.name}</span>
-                          {r.status === 'verified' ? <StatusTag variant="green">✓ Verified</StatusTag> : <StatusTag variant="yellow">Draft — needs verification</StatusTag>}
-                          {r.menu_price > 0 && <span className="text-xs text-muted-foreground font-mono">${r.menu_price.toFixed(2)}</span>}
-                        </div>
-                        <div className="flex flex-wrap gap-1">
-                          {r.ingredients.map(ing => (
-                            <span key={ing.id} className="inline-flex items-center gap-1 bg-muted/50 border border-border/50 rounded-md px-2 py-0.5 text-[11px] font-mono text-foreground">
-                              {ing.name} {ing.qty}{ing.unit}
-                            </span>
-                          ))}
-                        </div>
-                        {r.verified_by && <div className="mt-1.5 text-[11px] text-muted-foreground">Verified by {r.verified_by} · {r.verified_date}</div>}
-                      </div>
-                      <Button
-                        variant={r.status === 'draft' ? 'default' : 'outline'}
-                        size="sm"
-                        className={r.status === 'draft' ? 'bg-orange hover:bg-orange/90' : ''}
-                        onClick={e => { e.stopPropagation(); setSelectedRId(r.id); }}
+
+              {/* Compact recipe list */}
+              <div className="bg-card border border-border rounded-lg overflow-hidden">
+                <table className="w-full text-[13px]">
+                  <thead>
+                    <tr className="bg-muted/50">
+                      <th className="text-left text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">Recipe</th>
+                      <th className="text-left text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">Status</th>
+                      <th className="text-left text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">Price</th>
+                      <th className="text-left text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">Ingredients</th>
+                      <th className="text-left text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredRecipes.map(r => (
+                      <tr
+                        key={r.id}
+                        className={`border-b border-border/30 hover:bg-muted/30 cursor-pointer ${r.status === 'draft' ? 'bg-amber-50/30' : ''}`}
+                        onClick={() => setSelectedRId(r.id)}
                       >
-                        {r.status === 'draft' ? 'Review →' : 'Edit'}
-                      </Button>
-                    </div>
-                  </div>
-                ))}
+                        <td className="px-3.5 py-2.5 font-semibold">{r.name}</td>
+                        <td className="px-3.5 py-2.5">
+                          {r.status === 'verified' ? <StatusTag variant="green">✓ Verified</StatusTag> : <StatusTag variant="yellow">Draft</StatusTag>}
+                        </td>
+                        <td className="px-3.5 py-2.5">
+                          {r.menu_price > 0 ? <span className="font-mono text-xs">${r.menu_price.toFixed(2)}</span> : <span className="text-muted-foreground/40 text-xs">—</span>}
+                        </td>
+                        <td className="px-3.5 py-2.5 text-muted-foreground text-xs">{r.ingredients.length} ingredient{r.ingredients.length !== 1 ? 's' : ''}</td>
+                        <td className="px-3.5 py-2.5">
+                          <Button
+                            variant={r.status === 'draft' ? 'default' : 'outline'}
+                            size="sm"
+                            className={r.status === 'draft' ? 'bg-orange hover:bg-orange/90' : ''}
+                            onClick={e => { e.stopPropagation(); setSelectedRId(r.id); }}
+                          >
+                            {r.status === 'draft' ? 'Review →' : 'Edit'}
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                    {filteredRecipes.length === 0 && (
+                      <tr><td colSpan={5} className="px-3.5 py-8 text-center text-muted-foreground">No recipes match your search</td></tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </>
           )}
@@ -608,6 +771,31 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
             <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
             <Button variant="destructive" onClick={handleDeleteConfirm} disabled={deleteRecipe.isPending}>
               {deleteRecipe.isPending ? 'Deleting…' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Action Confirmation Dialog */}
+      <Dialog open={!!bulkAction} onOpenChange={open => { if (!open) setBulkAction(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {bulkAction === 'verifyAll' ? `Verify all ${draftRecipes.length} draft recipes?` : `Delete all ${draftRecipes.length} draft recipes?`}
+            </DialogTitle>
+            <DialogDescription>
+              {bulkAction === 'verifyAll'
+                ? 'This will auto-link ingredients and start inventory tracking for all draft recipes.'
+                : 'This will permanently delete all draft recipes. This cannot be undone.'}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkAction(null)}>Cancel</Button>
+            <Button
+              variant={bulkAction === 'deleteAllDrafts' ? 'destructive' : 'default'}
+              onClick={bulkAction === 'verifyAll' ? verifyAllDrafts : deleteAllDrafts}
+            >
+              {bulkAction === 'verifyAll' ? `Verify ${draftRecipes.length} Recipes` : `Delete ${draftRecipes.length} Drafts`}
             </Button>
           </DialogFooter>
         </DialogContent>
