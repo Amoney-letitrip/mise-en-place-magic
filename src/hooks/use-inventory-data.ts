@@ -70,6 +70,39 @@ export const useCreateIngredient = () => {
   });
 };
 
+export const useDeleteIngredient = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      // Delete recipe_ingredient links first
+      await supabase.from('recipe_ingredients').delete().eq('ingredient_id', id);
+      // Lots cascade via FK, but delete explicitly to be safe
+      await supabase.from('lots').delete().eq('ingredient_id', id);
+      const { error } = await supabase.from('ingredients').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['ingredients'] });
+      qc.invalidateQueries({ queryKey: ['lots'] });
+      qc.invalidateQueries({ queryKey: ['recipes-with-ingredients'] });
+    },
+  });
+};
+
+export const useDeleteRecipe = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      await supabase.from('recipe_ingredients').delete().eq('recipe_id', id);
+      const { error } = await supabase.from('recipes').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['recipes-with-ingredients'] });
+    },
+  });
+};
+
 export const useUpdateLot = () => {
   const qc = useQueryClient();
   return useMutation({
@@ -215,5 +248,19 @@ export const useUpdateProfile = () => {
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['profile'] }),
+  });
+};
+
+export const useUpdateRecipe = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, updates }: { id: string; updates: Record<string, any> }) => {
+      const { error } = await supabase
+        .from('recipes')
+        .update(updates)
+        .eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['recipes-with-ingredients'] }),
   });
 };

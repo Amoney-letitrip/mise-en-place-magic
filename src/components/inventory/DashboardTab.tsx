@@ -15,11 +15,12 @@ interface DashboardTabProps {
   suggestions: Array<{ icon: string; text: string; tab: TabId }>;
   fefo: boolean;
   setTab: (tab: TabId) => void;
+  restaurantName?: string | null;
 }
 
 export const DashboardTab = ({
   orderDraft, stockoutRisk, expiredLots, expiringLots,
-  suggestions, fefo, setTab,
+  suggestions, fefo, setTab, restaurantName,
 }: DashboardTabProps) => {
   const now = new Date();
   const dueOrders = orderDraft.filter(v => v.anyDue);
@@ -69,10 +70,14 @@ export const DashboardTab = ({
       <div className="bg-card border border-border rounded-lg p-4 mb-4">
         <div className="font-bold text-sm mb-2.5 flex items-center gap-2">
           🤖 Today's Action List
-          <StatusTag variant="blue">{suggestions.length}</StatusTag>
+          {suggestions.length > 0 && <StatusTag variant="blue">{suggestions.length}</StatusTag>}
         </div>
         {suggestions.length === 0 ? (
-          <div className="text-[13px] text-muted-foreground">✓ Nothing urgent — restaurant is running smoothly</div>
+          <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-5 text-center">
+            <div className="text-2xl mb-1.5">✅</div>
+            <div className="font-bold text-emerald-700 text-sm">All clear — no action items right now</div>
+            <div className="text-xs text-emerald-600 mt-0.5">Your restaurant is running smoothly</div>
+          </div>
         ) : (
           <div className="space-y-2">
             {suggestions.map((s, i) => (

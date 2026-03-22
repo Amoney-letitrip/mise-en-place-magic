@@ -5,6 +5,8 @@ import type { Database } from '@/integrations/supabase/types';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { useDeleteRecipe, useUpdateRecipe } from '@/hooks/use-inventory-data';
 
 type Ingredient = Database['public']['Tables']['ingredients']['Row'];
 
@@ -12,6 +14,7 @@ interface RecipeWithIngredients {
   id: string;
   name: string;
   status: string;
+  menu_price: number;
   verified_by: string | null;
   verified_date: string | null;
   created_at: string;
@@ -48,8 +51,12 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
   const [menuUrlInput, setMenuUrlInput] = useState('');
   const [scannedRecipes, setScannedRecipes] = useState<ScannedRecipe[]>([]);
   const [removedIndices, setRemovedIndices] = useState<Set<number>>(new Set());
+  const [deleteTarget, setDeleteTarget] = useState<RecipeWithIngredients | null>(null);
+  const [menuPriceInput, setMenuPriceInput] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
   const qc = useQueryClient();
+  const deleteRecipe = useDeleteRecipe();
+  const updateRecipeMut = useUpdateRecipe();
 
   const selectedRecipe = recipes.find(r => r.id === selectedRId);
 
@@ -71,7 +78,6 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
         r.readAsDataURL(file);
       });
       const mediaType = file.type || 'image/jpeg';
-
       const { data: fnData, error: fnError } = await supabase.functions.invoke('scan-menu', {
         body: { type: 'photo', base64, mediaType },
       });
@@ -113,7 +119,6 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
     try {
       const userId = await getUserId();
       const toSave = scannedRecipes.filter((_, i) => !removedIndices.has(i));
-
       for (const r of toSave) {
         const { data: recipe, error: re } = await supabase
           .from('recipes')
@@ -131,7 +136,6 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
         }));
         if (ings.length > 0) await supabase.from('recipe_ingredients').insert(ings);
       }
-
       qc.invalidateQueries({ queryKey: ['recipes-with-ingredients'] });
       setMenuScanState('done');
       setShowScanUI(false);
@@ -182,20 +186,16 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
   const verifyRecipe = useCallback(async (id: string) => {
     const r = recipes.find(x => x.id === id);
     if (!r) return;
-
-    // Auto-create missing ingredients in inventory
     try {
       const userId = await getUserId();
       for (const ri of r.ingredients) {
-        if (ri.ingredient_id) continue; // already linked
-        // Check if ingredient with this name already exists
+        if (ri.ingredient_id) continue;
         const { data: existing } = await supabase
           .from('ingredients')
           .select('id')
           .eq('user_id', userId)
           .ilike('name', ri.name)
           .maybeSingle();
-
         let ingredientId = existing?.id;
         if (!ingredientId) {
           const { data: newIng } = await supabase
@@ -205,7 +205,6 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
             .single();
           ingredientId = newIng?.id;
         }
-
         if (ingredientId) {
           await supabase.from('recipe_ingredients').update({ ingredient_id: ingredientId }).eq('id', ri.id);
         }
@@ -213,7 +212,6 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
     } catch (e) {
       console.error('Auto-link ingredients failed:', e);
     }
-
     const { error } = await supabase.from('recipes').update({ status: 'verified', verified_by: 'Manager', verified_date: new Date().toLocaleDateString() }).eq('id', id);
     if (error) { toast.error('Failed to verify'); return; }
     qc.invalidateQueries({ queryKey: ['recipes-with-ingredients'] });
@@ -226,6 +224,23 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
     await supabase.from('recipe_ingredients').update(updates).eq('id', riId);
     qc.invalidateQueries({ queryKey: ['recipes-with-ingredients'] });
   }, [qc]);
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget) return;
+    try {
+      await deleteRecipe.mutateAsync(deleteTarget.id);
+      toast.success(`"${deleteTarget.name}" deleted`);
+      setDeleteTarget(null);
+      setSelectedRId(null);
+    } catch {
+      toast.error('Failed to delete recipe');
+    }
+  };
+
+  const saveMenuPrice = useCallback(async (recipeId: string, priceStr: string) => {
+    const price = parseFloat(priceStr) || 0;
+    await updateRecipeMut.mutateAsync({ id: recipeId, updates: { menu_price: price } });
+  }, [updateRecipeMut]);
 
   const showScanArea = showScanUI || recipes.length === 0;
   const activeScannedCount = scannedRecipes.filter((_, i) => !removedIndices.has(i)).length;
@@ -253,7 +268,7 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
             </div>
           )}
 
-          {/* SCAN UI — shown for empty state or after clicking Re-scan */}
+          {/* SCAN UI */}
           {showScanArea && menuScanState === 'idle' && (
             <div>
               {recipes.length > 0 && (
@@ -275,7 +290,6 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
                   <Button className="w-full" onClick={e => { e.stopPropagation(); fileRef.current?.click(); }}>Choose File</Button>
                   <div className="mt-2.5 text-[11px] text-muted-foreground">JPG, PNG, HEIC, PDF</div>
                 </div>
-
                 <div className="bg-accent/30 border border-dashed border-accent-foreground/20 rounded-lg p-8 text-center">
                   <div className="text-5xl mb-3.5">🔗</div>
                   <div className="font-extrabold text-base text-foreground mb-2">Paste a menu link</div>
@@ -321,7 +335,7 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
             </div>
           )}
 
-          {/* REVIEW STATE — verify scanned recipes before saving */}
+          {/* REVIEW STATE */}
           {showScanArea && menuScanState === 'review' && (
             <div className="bg-card border border-border rounded-lg p-6">
               <div className="flex justify-between items-start mb-4">
@@ -337,7 +351,6 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
                   </Button>
                 </div>
               </div>
-
               <div className="max-h-[500px] overflow-y-auto space-y-3 mb-5 pr-1">
                 {scannedRecipes.map((r, i) => {
                   const removed = removedIndices.has(i);
@@ -388,7 +401,6 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
                   <div className="text-center text-muted-foreground py-8">No recipes were found in the scan</div>
                 )}
               </div>
-
               <div className="flex gap-2">
                 <Button className="flex-1" size="lg" onClick={saveScannedRecipes} disabled={activeScannedCount === 0}>
                   Save {activeScannedCount} Recipe{activeScannedCount !== 1 ? 's' : ''} as Drafts
@@ -422,7 +434,6 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
                   💡 <strong>{draftRecipes.length} unverified recipe{draftRecipes.length > 1 ? 's' : ''}</strong> — verify so sales start tracking inventory.
                 </div>
               )}
-
               <div className="grid gap-2.5">
                 {recipes.map(r => (
                   <div
@@ -435,6 +446,7 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
                         <div className="flex items-center gap-2 mb-1.5">
                           <span className="font-bold text-[15px]">{r.name}</span>
                           {r.status === 'verified' ? <StatusTag variant="green">✓ Verified</StatusTag> : <StatusTag variant="yellow">Draft — needs verification</StatusTag>}
+                          {r.menu_price > 0 && <span className="text-xs text-muted-foreground font-mono">${r.menu_price.toFixed(2)}</span>}
                         </div>
                         <div className="flex flex-wrap gap-1">
                           {r.ingredients.map(ing => (
@@ -510,11 +522,23 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
           <button className="text-muted-foreground text-[13px] font-semibold mb-3.5 flex items-center gap-1 hover:text-foreground" onClick={() => setSelectedRId(null)}>
             ← Back to Recipes
           </button>
-          <div className="flex items-center gap-2.5 mb-4">
+          <div className="flex items-center gap-2.5 mb-1">
             <h1 className="text-xl font-extrabold text-foreground">{selectedRecipe.name}</h1>
             {selectedRecipe.status === 'verified'
               ? <StatusTag variant="green">✓ Verified — {fefo ? 'FEFO' : 'FIFO'} tracking active</StatusTag>
               : <StatusTag variant="yellow">⚠ Draft — inventory not tracked</StatusTag>}
+          </div>
+
+          {/* Menu Price */}
+          <div className="flex items-center gap-2 mb-4">
+            <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Menu Price $</label>
+            <input
+              type="number"
+              className="w-24 px-2 py-1 border border-border rounded-md text-sm bg-card font-mono focus:outline-none focus:ring-2 focus:ring-primary/20"
+              defaultValue={selectedRecipe.menu_price || ''}
+              placeholder="0.00"
+              onBlur={e => saveMenuPrice(selectedRecipe.id, e.target.value)}
+            />
           </div>
 
           <div className="bg-card border border-border rounded-lg p-4 mb-3">
@@ -560,9 +584,34 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
             <Button variant="outline" onClick={() => setSelectedRId(null)}>
               Close
             </Button>
+            <Button
+              variant="outline"
+              className="text-destructive border-destructive/30 hover:bg-destructive/10 ml-auto"
+              onClick={() => setDeleteTarget(selectedRecipe)}
+            >
+              🗑 Delete Recipe
+            </Button>
           </div>
         </>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!deleteTarget} onOpenChange={open => { if (!open) setDeleteTarget(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete "{deleteTarget?.name}"?</DialogTitle>
+            <DialogDescription>
+              This will permanently delete this recipe and all its ingredient links. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleDeleteConfirm} disabled={deleteRecipe.isPending}>
+              {deleteRecipe.isPending ? 'Deleting…' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

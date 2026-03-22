@@ -1,6 +1,7 @@
 import { StatusTag, Mono, SectionHead } from './StatusTag';
 import { fmtN } from '@/lib/inventory-utils';
 import type { Database } from '@/integrations/supabase/types';
+import type { TabId } from '@/lib/types';
 
 type Ingredient = Database['public']['Tables']['ingredients']['Row'];
 
@@ -8,15 +9,17 @@ interface RecipeWithIngredients {
   id: string;
   name: string;
   status: string;
+  menu_price: number;
   ingredients: Array<{ ingredient_id: string | null; qty: number; unit: string }>;
 }
 
 interface CostsTabProps {
   ingredients: Ingredient[];
   recipes: RecipeWithIngredients[];
+  setTab?: (tab: TabId) => void;
 }
 
-export const CostsTab = ({ ingredients, recipes }: CostsTabProps) => {
+export const CostsTab = ({ ingredients, recipes, setTab }: CostsTabProps) => {
   const totalIngCost = ingredients.reduce((sum, ing) => sum + ing.current_stock * ing.cost_per_unit, 0);
 
   const recipeMargins = recipes.filter(r => r.status === 'verified').map(r => {
@@ -25,13 +28,14 @@ export const CostsTab = ({ ingredients, recipes }: CostsTabProps) => {
       const ing = ingredients.find(i => i.id === ri.ingredient_id);
       return s + ri.qty * (ing?.cost_per_unit ?? 0);
     }, 0);
-    const menuPrices: Record<string, number> = { 'Classic Burger': 14.99, 'Margherita Pizza': 16.99 };
-    const price = menuPrices[r.name] || 12.99;
-    return { name: r.name, cost, price, margin: price - cost, pct: cost / price * 100 };
+    const price = r.menu_price || 0;
+    const hasPrice = price > 0;
+    return { id: r.id, name: r.name, cost, price, margin: price - cost, pct: hasPrice ? (cost / price * 100) : 0, hasPrice };
   });
 
-  const avgFoodCostPct = recipeMargins.length > 0
-    ? recipeMargins.reduce((s, r) => s + r.pct, 0) / recipeMargins.length
+  const pricedRecipes = recipeMargins.filter(r => r.hasPrice);
+  const avgFoodCostPct = pricedRecipes.length > 0
+    ? pricedRecipes.reduce((s, r) => s + r.pct, 0) / pricedRecipes.length
     : 0;
 
   return (
@@ -39,10 +43,12 @@ export const CostsTab = ({ ingredients, recipes }: CostsTabProps) => {
       <SectionHead title="Cost Analytics" sub="Owner view — food cost, margins, and waste" />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 mb-4">
-        <div className={`bg-card border rounded-lg p-4 ${avgFoodCostPct > 35 ? 'bg-red-50/50 border-red-200' : 'bg-emerald-50/50 border-emerald-200'}`}>
+        <div className={`bg-card border rounded-lg p-4 ${avgFoodCostPct > 35 ? 'bg-red-50/50 border-red-200' : pricedRecipes.length > 0 ? 'bg-emerald-50/50 border-emerald-200' : 'border-border'}`}>
           <div className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">🥩 Avg Food Cost %</div>
-          <div className={`text-4xl font-extrabold leading-none mb-1 ${avgFoodCostPct > 35 ? 'text-destructive' : 'text-emerald-600'}`}>{avgFoodCostPct.toFixed(1)}%</div>
-          <div className="text-[11px] text-muted-foreground">Target: under 30%</div>
+          <div className={`text-4xl font-extrabold leading-none mb-1 ${pricedRecipes.length === 0 ? 'text-muted-foreground/30' : avgFoodCostPct > 35 ? 'text-destructive' : 'text-emerald-600'}`}>
+            {pricedRecipes.length === 0 ? '—' : `${avgFoodCostPct.toFixed(1)}%`}
+          </div>
+          <div className="text-[11px] text-muted-foreground">{pricedRecipes.length === 0 ? 'Set menu prices to calculate' : 'Target: under 30%'}</div>
         </div>
         <div className="bg-card border border-border rounded-lg p-4">
           <div className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">📦 Inventory Value</div>
@@ -78,16 +84,37 @@ export const CostsTab = ({ ingredients, recipes }: CostsTabProps) => {
                   <tr key={r.name} className="border-b border-border/30">
                     <td className="px-3.5 py-2.5 font-semibold">{r.name}</td>
                     <td className="px-3.5 py-2.5"><Mono>${r.cost.toFixed(2)}</Mono></td>
-                    <td className="px-3.5 py-2.5"><Mono className="text-emerald-600">${r.price.toFixed(2)}</Mono></td>
                     <td className="px-3.5 py-2.5">
-                      <div className="flex items-center gap-2">
-                        <div className="w-[60px] h-1.5 bg-muted rounded-full overflow-hidden">
-                          <div className={`h-full rounded-full ${r.pct > 35 ? 'bg-destructive' : r.pct > 30 ? 'bg-warning' : 'bg-stock-good'}`} style={{ width: `${Math.min(100, r.pct)}%` }} />
-                        </div>
-                        <span className={`font-bold text-[13px] ${r.pct > 35 ? 'text-destructive' : r.pct > 30 ? 'text-amber-600' : 'text-emerald-600'}`}>{r.pct.toFixed(1)}%</span>
-                      </div>
+                      {r.hasPrice ? (
+                        <Mono className="text-emerald-600">${r.price.toFixed(2)}</Mono>
+                      ) : (
+                        <button
+                          className="text-xs text-primary hover:underline font-semibold"
+                          onClick={() => setTab?.('recipes')}
+                        >
+                          Set price →
+                        </button>
+                      )}
                     </td>
-                    <td className="px-3.5 py-2.5"><span className="font-bold text-emerald-600">${r.margin.toFixed(2)}</span></td>
+                    <td className="px-3.5 py-2.5">
+                      {r.hasPrice ? (
+                        <div className="flex items-center gap-2">
+                          <div className="w-[60px] h-1.5 bg-muted rounded-full overflow-hidden">
+                            <div className={`h-full rounded-full ${r.pct > 35 ? 'bg-destructive' : r.pct > 30 ? 'bg-warning' : 'bg-stock-good'}`} style={{ width: `${Math.min(100, r.pct)}%` }} />
+                          </div>
+                          <span className={`font-bold text-[13px] ${r.pct > 35 ? 'text-destructive' : r.pct > 30 ? 'text-amber-600' : 'text-emerald-600'}`}>{r.pct.toFixed(1)}%</span>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </td>
+                    <td className="px-3.5 py-2.5">
+                      {r.hasPrice ? (
+                        <span className="font-bold text-emerald-600">${r.margin.toFixed(2)}</span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
