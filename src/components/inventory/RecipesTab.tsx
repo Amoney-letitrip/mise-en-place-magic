@@ -52,7 +52,7 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
   const [scannedRecipes, setScannedRecipes] = useState<ScannedRecipe[]>([]);
   const [removedIndices, setRemovedIndices] = useState<Set<number>>(new Set());
   const [deleteTarget, setDeleteTarget] = useState<RecipeWithIngredients | null>(null);
-  const [menuPriceInput, setMenuPriceInput] = useState('');
+  
   const fileRef = useRef<HTMLInputElement>(null);
   const qc = useQueryClient();
   const deleteRecipe = useDeleteRecipe();

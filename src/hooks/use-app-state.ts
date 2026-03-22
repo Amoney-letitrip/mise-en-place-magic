@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useIngredients, useLots, useSales, useRecipesWithIngredients, useVendors, useUpdateIngredient, useUpdateLot, useCreateLot, useBulkUpdateIngredients } from '@/hooks/use-inventory-data';
-import { computeForecast, diffDays, buildCycleList, depleteOrdered, addDays } from '@/lib/inventory-utils';
+import { computeForecast, diffDays } from '@/lib/inventory-utils';
 import type { TabId } from '@/lib/types';
 import { toast } from 'sonner';
 
