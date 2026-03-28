@@ -6,6 +6,33 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+function extractJson(response: string): unknown {
+  let cleaned = response
+    .replace(/```json\s*/gi, "").replace(/```\s*/g, "")
+    .replace(/'''json\s*/gi, "").replace(/'''\s*/g, "")
+    .trim();
+  const jsonStart = cleaned.search(/[\{\[]/);
+  if (jsonStart === -1) throw new Error("No JSON found");
+  const endChar = cleaned[jsonStart] === '[' ? ']' : '}';
+  const jsonEnd = cleaned.lastIndexOf(endChar);
+  if (jsonEnd === -1) throw new Error("No closing bracket");
+  cleaned = cleaned.substring(jsonStart, jsonEnd + 1);
+  try { return JSON.parse(cleaned); } catch { /* continue */ }
+  cleaned = cleaned.replace(/,\s*}/g, "}").replace(/,\s*]/g, "]").replace(/[\x00-\x1F\x7F]/g, " ");
+  try { return JSON.parse(cleaned); } catch { /* continue */ }
+  let braces = 0, brackets = 0;
+  for (const c of cleaned) {
+    if (c === '{') braces++; if (c === '}') braces--;
+    if (c === '[') brackets++; if (c === ']') brackets--;
+  }
+  let repaired = cleaned;
+  repaired = repaired.replace(/,\s*"[^"]*$/, "");
+  repaired = repaired.replace(/,\s*\{[^}]*$/, "");
+  while (brackets > 0) { repaired += ']'; brackets--; }
+  while (braces > 0) { repaired += '}'; braces--; }
+  return JSON.parse(repaired);
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS")
     return new Response(null, { headers: corsHeaders });
