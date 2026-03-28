@@ -152,7 +152,7 @@ export const useAppState = () => {
   return {
     tab, setTab, fefo, setFefo, targetDays, setTargetDays,
     ingredients, lots, sales, recipes, vendors,
-    isLoading,
+    isLoading, hasError,
     expiredLots, expiringLots, lowItems, draftRecipes, flaggedSales,
     salesByItem, forecasts, orderDraft, stockoutRisk, suggestions,
     logWaste,
