@@ -21,7 +21,7 @@ interface DashboardTabProps {
 
 export const DashboardTab = ({
   orderDraft, stockoutRisk, expiredLots, expiringLots,
-  suggestions, fefo, setTab, restaurantName,
+  suggestions, fefo, setTab, restaurantName, sales,
 }: DashboardTabProps) => {
   const now = new Date();
   const dueOrders = orderDraft.filter(v => v.anyDue);
