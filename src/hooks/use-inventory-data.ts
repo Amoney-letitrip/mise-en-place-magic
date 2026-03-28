@@ -138,13 +138,16 @@ export const useBulkUpdateIngredients = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (updates: Array<{ id: string; current_stock: number }>) => {
-      for (const u of updates) {
-        const { error } = await supabase
-          .from('ingredients')
-          .update({ current_stock: u.current_stock })
-          .eq('id', u.id);
-        if (error) throw error;
-      }
+      const results = await Promise.all(
+        updates.map(u =>
+          supabase
+            .from('ingredients')
+            .update({ current_stock: u.current_stock })
+            .eq('id', u.id)
+        )
+      );
+      const failed = results.find(r => r.error);
+      if (failed?.error) throw failed.error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['ingredients'] }),
   });

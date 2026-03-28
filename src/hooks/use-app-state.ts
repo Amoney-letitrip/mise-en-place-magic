@@ -4,15 +4,17 @@ import { computeForecast, diffDays } from '@/lib/inventory-utils';
 import type { TabId } from '@/lib/types';
 import { toast } from 'sonner';
 
+const SALES_LOOKBACK_DAYS = 7;
+
 export const useAppState = () => {
   const [tab, setTab] = useState<TabId>('dashboard');
   const [fefo, setFefo] = useState(true);
   const [targetDays, setTargetDays] = useState(7);
 
-  const { data: ingredients = [], isLoading: loadingIngredients } = useIngredients();
-  const { data: lots = [], isLoading: loadingLots } = useLots();
-  const { data: sales = [], isLoading: loadingSales } = useSales();
-  const { data: recipes = [], isLoading: loadingRecipes } = useRecipesWithIngredients();
+  const { data: ingredients = [], isLoading: loadingIngredients, error: errorIngredients } = useIngredients();
+  const { data: lots = [], isLoading: loadingLots, error: errorLots } = useLots();
+  const { data: sales = [], isLoading: loadingSales, error: errorSales } = useSales();
+  const { data: recipes = [], isLoading: loadingRecipes, error: errorRecipes } = useRecipesWithIngredients();
   const { data: vendors = [] } = useVendors();
 
   const updateIngredient = useUpdateIngredient();
@@ -21,6 +23,7 @@ export const useAppState = () => {
   const bulkUpdateIngredients = useBulkUpdateIngredients();
 
   const isLoading = loadingIngredients || loadingLots || loadingSales || loadingRecipes;
+  const hasError = !!(errorIngredients || errorLots || errorSales || errorRecipes);
 
   const now = new Date();
 
@@ -57,7 +60,7 @@ export const useAppState = () => {
   // Only count sales from the last 7 days for ADU forecast
   const salesByItem = useMemo(() => {
     const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - SALES_LOOKBACK_DAYS);
     const counts: Record<string, number> = {};
     sales
       .filter(s => s.status === 'processed' && new Date(s.created_at) >= sevenDaysAgo)
@@ -149,7 +152,7 @@ export const useAppState = () => {
   return {
     tab, setTab, fefo, setFefo, targetDays, setTargetDays,
     ingredients, lots, sales, recipes, vendors,
-    isLoading,
+    isLoading, hasError,
     expiredLots, expiringLots, lowItems, draftRecipes, flaggedSales,
     salesByItem, forecasts, orderDraft, stockoutRisk, suggestions,
     logWaste,

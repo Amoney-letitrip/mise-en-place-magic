@@ -1,4 +1,7 @@
 import { useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { useAppState } from '@/hooks/use-app-state';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useProfile, useEnsureProfile } from '@/hooks/use-inventory-data';
@@ -35,6 +38,27 @@ const Index = () => {
     { id: 'recipes', label: 'Recipes', badge: capBadge(state.draftRecipes.length) || null, badgeLabel: state.draftRecipes.length > 99 ? '99+' : undefined },
     { id: 'costs', label: 'Costs' },
   ];
+
+  const queryClient = useQueryClient();
+
+  // Error state
+  if (state.hasError) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <Card className="max-w-md w-full">
+          <CardHeader>
+            <CardTitle className="text-center">Failed to load data</CardTitle>
+          </CardHeader>
+          <CardContent className="text-center space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Something went wrong while loading your data. Please try again.
+            </p>
+            <Button onClick={() => queryClient.invalidateQueries()}>Try Again</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   // Loading state
   if (state.isLoading || loadingProfile) {
@@ -76,6 +100,7 @@ const Index = () => {
             fefo={state.fefo}
             setTab={state.setTab}
             restaurantName={profile?.restaurant_name}
+            sales={state.sales}
           />
         )}
 
