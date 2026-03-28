@@ -4,6 +4,8 @@ import { computeForecast, diffDays } from '@/lib/inventory-utils';
 import type { TabId } from '@/lib/types';
 import { toast } from 'sonner';
 
+const SALES_LOOKBACK_DAYS = 7;
+
 export const useAppState = () => {
   const [tab, setTab] = useState<TabId>('dashboard');
   const [fefo, setFefo] = useState(true);
