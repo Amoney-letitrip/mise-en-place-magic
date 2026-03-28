@@ -73,7 +73,14 @@ export const DashboardTab = ({
           🤖 Today's Action List
           {suggestions.length > 0 && <StatusTag variant="blue">{suggestions.length}</StatusTag>}
         </div>
-        {suggestions.length === 0 ? (
+        {suggestions.length === 0 && sales.length === 0 && stockoutRisk.length === 0 && dueOrders.length === 0 ? (
+          <div className="bg-muted/50 border border-border rounded-lg px-4 py-5 text-center">
+            <div className="text-2xl mb-1.5">📊</div>
+            <div className="font-bold text-foreground text-sm">No sales recorded yet</div>
+            <div className="text-xs text-muted-foreground mt-0.5 mb-3">Start logging sales or connect your POS to unlock forecasts, reorder alerts, and stockout warnings.</div>
+            <button onClick={() => setTab('sales')} className="text-xs font-medium text-primary hover:underline">Go to Sales →</button>
+          </div>
+        ) : suggestions.length === 0 ? (
           <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-5 text-center">
             <div className="text-2xl mb-1.5">✅</div>
             <div className="font-bold text-emerald-700 text-sm">All clear — no action items right now</div>
