@@ -110,15 +110,17 @@ Rules:
     const data = await response.json();
     const raw = data.choices?.[0]?.message?.content || "";
 
-    // Parse JSON from response (strip markdown fences if present)
-    const jsonStr = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+    // Robust JSON extraction and repair
     let parsed: { recipes: any[] };
     try {
-      parsed = JSON.parse(jsonStr);
-    } catch {
-      console.error("Failed to parse AI response:", raw);
+      parsed = extractJson(raw) as { recipes: any[] };
+      if (!parsed?.recipes || !Array.isArray(parsed.recipes)) {
+        throw new Error("Missing recipes array");
+      }
+    } catch (e) {
+      console.error("Failed to parse AI response:", raw.slice(0, 500));
       return new Response(
-        JSON.stringify({ error: "AI returned invalid format", raw }),
+        JSON.stringify({ error: "AI returned invalid format. Try scanning again or use a clearer image." }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
