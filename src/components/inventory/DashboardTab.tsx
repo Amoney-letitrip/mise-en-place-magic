@@ -16,6 +16,7 @@ interface DashboardTabProps {
   fefo: boolean;
   setTab: (tab: TabId) => void;
   restaurantName?: string | null;
+  sales: Array<{ id: string }>;
 }
 
 export const DashboardTab = ({
