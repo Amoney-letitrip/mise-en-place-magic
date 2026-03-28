@@ -100,6 +100,7 @@ const Index = () => {
             fefo={state.fefo}
             setTab={state.setTab}
             restaurantName={profile?.restaurant_name}
+            sales={state.sales}
           />
         )}
 
