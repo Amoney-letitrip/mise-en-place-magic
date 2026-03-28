@@ -59,7 +59,7 @@ export const useAppState = () => {
   // Only count sales from the last 7 days for ADU forecast
   const salesByItem = useMemo(() => {
     const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - SALES_LOOKBACK_DAYS);
     const counts: Record<string, number> = {};
     sales
       .filter(s => s.status === 'processed' && new Date(s.created_at) >= sevenDaysAgo)
