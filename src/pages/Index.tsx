@@ -39,6 +39,27 @@ const Index = () => {
     { id: 'costs', label: 'Costs' },
   ];
 
+  const queryClient = useQueryClient();
+
+  // Error state
+  if (state.hasError) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <Card className="max-w-md w-full">
+          <CardHeader>
+            <CardTitle className="text-center">Failed to load data</CardTitle>
+          </CardHeader>
+          <CardContent className="text-center space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Something went wrong while loading your data. Please try again.
+            </p>
+            <Button onClick={() => queryClient.invalidateQueries()}>Try Again</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   // Loading state
   if (state.isLoading || loadingProfile) {
     return (
