@@ -16,7 +16,7 @@ interface DinerHomeProps {
 
 const getStatusColor = (count: number, warnAt: number, urgentAt: number) => {
   if (count === 0) return '#27AE60';
-  if (count <= warnAt) return '#E67E22';
+  if (count <= warnAt) return '#F1C40F';
   return '#E74C3C';
 };
 
@@ -63,9 +63,9 @@ export const DinerHome = ({
     },
     {
       id: 'overview', label: 'Overview', top: '49%', left: '90%',
-      color: '#2980B9',
-      count: undefined,
-      isUrgent: false,
+      color: (() => { const total = lowItems + flaggedSales + draftRecipes + ordersDue + expiredLots + expiringLots; return getStatusColor(total, 5, 5); })(),
+      count: (() => { const total = lowItems + flaggedSales + draftRecipes + ordersDue + expiredLots + expiringLots; return total || undefined; })(),
+      isUrgent: (lowItems + flaggedSales + draftRecipes + ordersDue + expiredLots + expiringLots) > 5,
     },
     {
       id: 'orders', label: 'Orders', top: '63%', left: '61%',
@@ -75,7 +75,7 @@ export const DinerHome = ({
     },
     {
       id: 'costs', label: 'Costs', top: '24%', left: '80%',
-      color: '#8E44AD',
+      color: getStatusColor(0, 1, 1),
       count: undefined,
       isUrgent: false,
     },
@@ -121,7 +121,7 @@ export const DinerHome = ({
           <button
             key={b.id}
             onClick={() => setTab(b.id)}
-            className="absolute flex items-center gap-1.5 border-0 cursor-pointer font-bold text-white"
+            className="absolute flex items-center gap-1.5 border-0 cursor-pointer font-bold"
             style={{
               top: b.top, left: b.left,
               transform: 'translate(-50%, -50%)',
@@ -129,6 +129,7 @@ export const DinerHome = ({
               borderRadius: '20px',
               padding: '6px 16px',
               fontSize: '13px',
+              color: b.color === '#F1C40F' ? '#333' : 'white',
               transition: 'all 0.3s ease',
               animation: b.isUrgent ? 'alert-pulse 2s ease-in-out infinite' : undefined,
               boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
@@ -151,7 +152,7 @@ export const DinerHome = ({
                   width: '18px', height: '18px',
                   fontSize: '11px',
                   background: 'white',
-                  color: b.color,
+                  color: b.color === '#F1C40F' ? '#333' : b.color,
                 }}
               >
                 {b.count > 99 ? '99' : b.count}
