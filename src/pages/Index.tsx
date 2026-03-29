@@ -82,7 +82,7 @@ const Index = () => {
   if (state.tab === 'dashboard') {
     return (
       <div className="min-h-screen bg-background">
-        <DinerHome setTab={state.setTab} />
+        <DinerHome setTab={state.setTab} restaurantName={profile?.restaurant_name} isMobile={isMobile} />
         {isMobile && <MobileNav tab={state.tab} setTab={state.setTab} navItems={navItems} />}
       </div>
     );
