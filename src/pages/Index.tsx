@@ -79,6 +79,15 @@ const Index = () => {
     return <OnboardingWizard restaurantName={profile.restaurant_name} />;
   }
 
+  if (state.tab === 'dashboard') {
+    return (
+      <div className="min-h-screen bg-background">
+        <DinerHome setTab={state.setTab} />
+        {isMobile && <MobileNav tab={state.tab} setTab={state.setTab} navItems={navItems} />}
+      </div>
+    );
+  }
+
   return (
     <div className={`min-h-screen bg-background ${isMobile ? 'pb-[70px]' : ''}`}>
       <AppNav
@@ -91,10 +100,6 @@ const Index = () => {
       />
 
       <div className="max-w-content mx-auto px-4 py-5">
-        {state.tab === 'dashboard' && (
-          <DinerHome setTab={state.setTab} />
-        )}
-
         {state.tab === 'overview' && (
           <DashboardTab
             ingredients={state.ingredients}

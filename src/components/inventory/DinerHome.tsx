@@ -11,12 +11,12 @@ interface Hotspot {
 }
 
 const hotspots: Hotspot[] = [
-  { id: 'sales', label: 'Sales', top: '8%', left: '52%', width: '10%', height: '8%' },
-  { id: 'recipes', label: 'Recipes', top: '45%', left: '35%', width: '12%', height: '8%' },
-  { id: 'inventory', label: 'Inventory', top: '48%', left: '58%', width: '12%', height: '8%' },
-  { id: 'overview', label: 'Dashboard', top: '35%', left: '78%', width: '14%', height: '8%' },
-  { id: 'orders', label: 'Orders', top: '58%', left: '82%', width: '12%', height: '8%' },
-  { id: 'costs', label: 'Costs', top: '78%', left: '78%', width: '10%', height: '8%' },
+  { id: 'sales', label: 'Sales', top: '7%', left: '53%', width: '9%', height: '7%' },
+  { id: 'recipes', label: 'Recipes', top: '47%', left: '36%', width: '11%', height: '7%' },
+  { id: 'inventory', label: 'Inventory', top: '50%', left: '61%', width: '11%', height: '7%' },
+  { id: 'overview', label: 'Dashboard', top: '48%', left: '79%', width: '13%', height: '7%' },
+  { id: 'orders', label: 'Orders', top: '62%', left: '84%', width: '11%', height: '7%' },
+  { id: 'costs', label: 'Costs', top: '80%', left: '79%', width: '9%', height: '7%' },
 ];
 
 interface DinerHomeProps {
@@ -25,16 +25,13 @@ interface DinerHomeProps {
 
 export const DinerHome = ({ setTab }: DinerHomeProps) => {
   return (
-    <div className="animate-fade-up flex justify-center">
-      <div
-        className="relative w-full"
-        style={{ maxHeight: 'calc(100vh - 120px)' }}
-      >
+    <div className="animate-fade-up flex items-center justify-center" style={{ height: 'calc(100vh - 10px)' }}>
+      <div className="relative inline-block max-w-full" style={{ maxHeight: '100%' }}>
         <img
           src="/diner-home.png"
           alt="Diner illustration — click a room to navigate"
-          className="w-full h-auto object-contain"
-          style={{ maxHeight: 'calc(100vh - 120px)' }}
+          className="block max-w-full h-auto"
+          style={{ maxHeight: 'calc(100vh - 10px)' }}
           draggable={false}
         />
 
