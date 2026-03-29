@@ -74,7 +74,7 @@ export const DinerHome = ({
       isUrgent: ordersDue > 1,
     },
     {
-      id: 'costs', label: 'Costs', top: '75%', left: '86%',
+      id: 'costs', label: 'Costs', top: '24%', left: '80%',
       color: '#8E44AD',
       count: undefined,
       isUrgent: false,
