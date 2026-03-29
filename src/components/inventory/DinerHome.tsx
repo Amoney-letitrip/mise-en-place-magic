@@ -50,7 +50,7 @@ export const DinerHome = ({
       isUrgent: flaggedSales > 3,
     },
     {
-      id: 'recipes', label: 'Recipes', top: '44%', left: '42%',
+      id: 'recipes', label: 'Recipes', top: '48%', left: '48%',
       color: getStatusColor(draftRecipes, 2, 2),
       count: draftRecipes || undefined,
       isUrgent: draftRecipes > 2,
