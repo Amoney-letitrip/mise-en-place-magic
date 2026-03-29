@@ -92,6 +92,10 @@ const Index = () => {
 
       <div className="max-w-content mx-auto px-4 py-5">
         {state.tab === 'dashboard' && (
+          <DinerHome setTab={state.setTab} />
+        )}
+
+        {state.tab === 'overview' && (
           <DashboardTab
             ingredients={state.ingredients}
             orderDraft={state.orderDraft}

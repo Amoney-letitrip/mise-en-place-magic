@@ -14,7 +14,8 @@ interface MobileNavProps {
 }
 
 const ICONS: Record<TabId, string> = {
-  dashboard: '📊',
+  dashboard: '🏠',
+  overview: '📊',
   inventory: '📦',
   orders: '🛒',
   sales: '💰',
