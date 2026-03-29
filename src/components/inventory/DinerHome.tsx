@@ -62,7 +62,7 @@ export const DinerHome = ({
       isUrgent: lowItems > 3,
     },
     {
-      id: 'overview', label: 'Overview', top: '36%', left: '88%',
+      id: 'overview', label: 'Overview', top: '49%', left: '90%',
       color: '#2980B9',
       count: undefined,
       isUrgent: false,
