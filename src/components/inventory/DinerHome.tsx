@@ -68,7 +68,7 @@ export const DinerHome = ({
       isUrgent: false,
     },
     {
-      id: 'orders', label: 'Orders', top: '55%', left: '84%',
+      id: 'orders', label: 'Orders', top: '63%', left: '61%',
       color: getStatusColor(ordersDue, 1, 1),
       count: ordersDue || undefined,
       isUrgent: ordersDue > 1,
