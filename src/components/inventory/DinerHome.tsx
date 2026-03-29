@@ -63,9 +63,9 @@ export const DinerHome = ({
     },
     {
       id: 'overview', label: 'Overview', top: '49%', left: '90%',
-      color: '#2980B9',
-      count: undefined,
-      isUrgent: false,
+      color: (() => { const total = lowItems + flaggedSales + draftRecipes + ordersDue + expiredLots + expiringLots; return getStatusColor(total, 5, 5); })(),
+      count: (() => { const total = lowItems + flaggedSales + draftRecipes + ordersDue + expiredLots + expiringLots; return total || undefined; })(),
+      isUrgent: (lowItems + flaggedSales + draftRecipes + ordersDue + expiredLots + expiringLots) > 5,
     },
     {
       id: 'orders', label: 'Orders', top: '63%', left: '61%',
@@ -75,7 +75,7 @@ export const DinerHome = ({
     },
     {
       id: 'costs', label: 'Costs', top: '24%', left: '80%',
-      color: '#8E44AD',
+      color: getStatusColor(0, 1, 1),
       count: undefined,
       isUrgent: false,
     },
