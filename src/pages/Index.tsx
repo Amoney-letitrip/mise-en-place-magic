@@ -32,7 +32,8 @@ const Index = () => {
 
   const capBadge = (n: number) => n > 99 ? 99 : n;
   const navItems: Array<{ id: TabId; label: string; badge?: number | null; badgeLabel?: string }> = [
-    { id: 'dashboard', label: 'Dashboard' },
+    { id: 'dashboard', label: 'Home' },
+    { id: 'overview', label: 'Overview' },
     { id: 'inventory', label: 'Inventory', badge: capBadge(state.lowItems.length) || null, badgeLabel: state.lowItems.length > 99 ? '99+' : undefined },
     { id: 'orders', label: 'Orders', badge: capBadge(state.orderDraft.filter(v => v.anyDue).length) || null },
     { id: 'sales', label: 'Sales', badge: capBadge(state.flaggedSales.length) || null },
