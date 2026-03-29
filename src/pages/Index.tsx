@@ -7,6 +7,7 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { useProfile, useEnsureProfile } from '@/hooks/use-inventory-data';
 import { AppNav } from '@/components/inventory/AppNav';
 import { MobileNav } from '@/components/inventory/MobileNav';
+import { DinerHome } from '@/components/inventory/DinerHome';
 import { DashboardTab } from '@/components/inventory/DashboardTab';
 import { InventoryTab } from '@/components/inventory/InventoryTab';
 import { OrdersTab } from '@/components/inventory/OrdersTab';
@@ -31,7 +32,8 @@ const Index = () => {
 
   const capBadge = (n: number) => n > 99 ? 99 : n;
   const navItems: Array<{ id: TabId; label: string; badge?: number | null; badgeLabel?: string }> = [
-    { id: 'dashboard', label: 'Dashboard' },
+    { id: 'dashboard', label: 'Home' },
+    { id: 'overview', label: 'Overview' },
     { id: 'inventory', label: 'Inventory', badge: capBadge(state.lowItems.length) || null, badgeLabel: state.lowItems.length > 99 ? '99+' : undefined },
     { id: 'orders', label: 'Orders', badge: capBadge(state.orderDraft.filter(v => v.anyDue).length) || null },
     { id: 'sales', label: 'Sales', badge: capBadge(state.flaggedSales.length) || null },
@@ -90,6 +92,10 @@ const Index = () => {
 
       <div className="max-w-content mx-auto px-4 py-5">
         {state.tab === 'dashboard' && (
+          <DinerHome setTab={state.setTab} />
+        )}
+
+        {state.tab === 'overview' && (
           <DashboardTab
             ingredients={state.ingredients}
             orderDraft={state.orderDraft}

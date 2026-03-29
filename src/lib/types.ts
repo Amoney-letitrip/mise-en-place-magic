@@ -85,5 +85,5 @@ export interface CycleCountItem {
   tags: string[];
 }
 
-export type TabId = 'dashboard' | 'inventory' | 'orders' | 'sales' | 'recipes' | 'costs';
+export type TabId = 'dashboard' | 'overview' | 'inventory' | 'orders' | 'sales' | 'recipes' | 'costs';
 export type IngSubTab = 'list' | 'count';
