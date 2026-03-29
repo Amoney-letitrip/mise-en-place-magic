@@ -121,7 +121,7 @@ export const DinerHome = ({
           <button
             key={b.id}
             onClick={() => setTab(b.id)}
-            className="absolute flex items-center gap-1.5 border-0 cursor-pointer font-bold text-white"
+            className="absolute flex items-center gap-1.5 border-0 cursor-pointer font-bold"
             style={{
               top: b.top, left: b.left,
               transform: 'translate(-50%, -50%)',
