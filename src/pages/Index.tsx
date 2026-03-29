@@ -7,6 +7,7 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { useProfile, useEnsureProfile } from '@/hooks/use-inventory-data';
 import { AppNav } from '@/components/inventory/AppNav';
 import { MobileNav } from '@/components/inventory/MobileNav';
+import { DinerHome } from '@/components/inventory/DinerHome';
 import { DashboardTab } from '@/components/inventory/DashboardTab';
 import { InventoryTab } from '@/components/inventory/InventoryTab';
 import { OrdersTab } from '@/components/inventory/OrdersTab';
