@@ -56,7 +56,7 @@ export const DinerHome = ({
       isUrgent: draftRecipes > 2,
     },
     {
-      id: 'inventory', label: 'Inventory', top: '66%', left: '54%',
+      id: 'inventory', label: 'Inventory', top: '44%', left: '73%',
       color: getStatusColor(lowItems, 3, 3),
       count: lowItems || undefined,
       isUrgent: lowItems > 3,
