@@ -116,31 +116,6 @@ export const DinerHome = ({
           </div>
         )}
 
-        {/* Room labels */}
-        {[
-          { text: 'Dining Room', top: '4%', left: '35%' },
-          { text: 'Kitchen', top: '52%', left: '12%' },
-          { text: 'Storage', top: '78%', left: '35%' },
-          { text: 'Office', top: '4%', left: '85%' },
-        ].map((room) => (
-          <span
-            key={room.text}
-            className="absolute pointer-events-none select-none"
-            style={{
-              top: room.top, left: room.left,
-              transform: 'translateX(-50%)',
-              fontSize: '11px',
-              fontWeight: 600,
-              color: 'rgba(255,255,255,0.45)',
-              textTransform: 'uppercase',
-              letterSpacing: '1.5px',
-              textShadow: '0 1px 4px rgba(0,0,0,0.5)',
-            }}
-          >
-            {room.text}
-          </span>
-        ))}
-
         {/* Badge buttons */}
         {badges.map((b) => (
           <button
