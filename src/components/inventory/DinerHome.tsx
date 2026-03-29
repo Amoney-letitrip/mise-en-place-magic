@@ -44,37 +44,37 @@ export const DinerHome = ({
 }: DinerHomeProps) => {
   const badges: BadgeConfig[] = [
     {
-      id: 'sales', label: 'Sales', top: '20%', left: '64%',
+      id: 'sales', label: 'Sales', top: '13%', left: '63%',
       color: getStatusColor(flaggedSales, 3, 3),
       count: flaggedSales || undefined,
       isUrgent: flaggedSales > 3,
     },
     {
-      id: 'recipes', label: 'Recipes', top: '44%', left: '42%',
+      id: 'recipes', label: 'Recipes', top: '48%', left: '48%',
       color: getStatusColor(draftRecipes, 2, 2),
       count: draftRecipes || undefined,
       isUrgent: draftRecipes > 2,
     },
     {
-      id: 'inventory', label: 'Inventory', top: '66%', left: '54%',
+      id: 'inventory', label: 'Inventory', top: '44%', left: '73%',
       color: getStatusColor(lowItems, 3, 3),
       count: lowItems || undefined,
       isUrgent: lowItems > 3,
     },
     {
-      id: 'overview', label: 'Overview', top: '36%', left: '88%',
+      id: 'overview', label: 'Overview', top: '49%', left: '90%',
       color: '#2980B9',
       count: undefined,
       isUrgent: false,
     },
     {
-      id: 'orders', label: 'Orders', top: '55%', left: '84%',
+      id: 'orders', label: 'Orders', top: '63%', left: '61%',
       color: getStatusColor(ordersDue, 1, 1),
       count: ordersDue || undefined,
       isUrgent: ordersDue > 1,
     },
     {
-      id: 'costs', label: 'Costs', top: '75%', left: '86%',
+      id: 'costs', label: 'Costs', top: '24%', left: '80%',
       color: '#8E44AD',
       count: undefined,
       isUrgent: false,
@@ -115,31 +115,6 @@ export const DinerHome = ({
             {restaurantName}
           </div>
         )}
-
-        {/* Room labels */}
-        {[
-          { text: 'Dining Room', top: '4%', left: '35%' },
-          { text: 'Kitchen', top: '52%', left: '12%' },
-          { text: 'Storage', top: '78%', left: '35%' },
-          { text: 'Office', top: '4%', left: '85%' },
-        ].map((room) => (
-          <span
-            key={room.text}
-            className="absolute pointer-events-none select-none"
-            style={{
-              top: room.top, left: room.left,
-              transform: 'translateX(-50%)',
-              fontSize: '11px',
-              fontWeight: 600,
-              color: 'rgba(255,255,255,0.45)',
-              textTransform: 'uppercase',
-              letterSpacing: '1.5px',
-              textShadow: '0 1px 4px rgba(0,0,0,0.5)',
-            }}
-          >
-            {room.text}
-          </span>
-        ))}
 
         {/* Badge buttons */}
         {badges.map((b) => (
