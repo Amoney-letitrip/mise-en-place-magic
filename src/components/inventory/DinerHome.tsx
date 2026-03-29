@@ -44,37 +44,37 @@ export const DinerHome = ({
 }: DinerHomeProps) => {
   const badges: BadgeConfig[] = [
     {
-      id: 'sales', label: 'Sales', top: '18%', left: '58%',
+      id: 'sales', label: 'Sales', top: '20%', left: '64%',
       color: getStatusColor(flaggedSales, 3, 3),
       count: flaggedSales || undefined,
       isUrgent: flaggedSales > 3,
     },
     {
-      id: 'recipes', label: 'Recipes', top: '52%', left: '38%',
+      id: 'recipes', label: 'Recipes', top: '44%', left: '42%',
       color: getStatusColor(draftRecipes, 2, 2),
       count: draftRecipes || undefined,
       isUrgent: draftRecipes > 2,
     },
     {
-      id: 'inventory', label: 'Inventory', top: '62%', left: '48%',
+      id: 'inventory', label: 'Inventory', top: '66%', left: '54%',
       color: getStatusColor(lowItems, 3, 3),
       count: lowItems || undefined,
       isUrgent: lowItems > 3,
     },
     {
-      id: 'overview', label: 'Overview', top: '35%', left: '82%',
+      id: 'overview', label: 'Overview', top: '36%', left: '88%',
       color: '#2980B9',
       count: undefined,
       isUrgent: false,
     },
     {
-      id: 'orders', label: 'Orders', top: '52%', left: '83%',
+      id: 'orders', label: 'Orders', top: '55%', left: '84%',
       color: getStatusColor(ordersDue, 1, 1),
       count: ordersDue || undefined,
       isUrgent: ordersDue > 1,
     },
     {
-      id: 'costs', label: 'Costs', top: '70%', left: '83%',
+      id: 'costs', label: 'Costs', top: '75%', left: '86%',
       color: '#8E44AD',
       count: undefined,
       isUrgent: false,
