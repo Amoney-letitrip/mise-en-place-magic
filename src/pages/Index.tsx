@@ -82,7 +82,18 @@ const Index = () => {
   if (state.tab === 'dashboard') {
     return (
       <div className="min-h-screen bg-background">
-        <DinerHome setTab={state.setTab} restaurantName={profile?.restaurant_name} isMobile={isMobile} />
+        <DinerHome
+          setTab={state.setTab}
+          restaurantName={profile?.restaurant_name}
+          lowItems={state.lowItems.length}
+          stockoutRisk={state.stockoutRisk.length}
+          expiredLots={state.expiredLots.length}
+          expiringLots={state.expiringLots.length}
+          flaggedSales={state.flaggedSales.length}
+          draftRecipes={state.draftRecipes.length}
+          ordersDue={state.orderDraft.filter(v => v.anyDue).length}
+          totalSales={state.sales.length}
+        />
         {isMobile && <MobileNav tab={state.tab} setTab={state.setTab} navItems={navItems} />}
       </div>
     );
