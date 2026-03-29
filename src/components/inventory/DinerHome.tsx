@@ -129,6 +129,7 @@ export const DinerHome = ({
               borderRadius: '20px',
               padding: '6px 16px',
               fontSize: '13px',
+              color: b.color === '#F1C40F' ? '#333' : 'white',
               transition: 'all 0.3s ease',
               animation: b.isUrgent ? 'alert-pulse 2s ease-in-out infinite' : undefined,
               boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
