@@ -12,12 +12,12 @@ interface Hotspot {
 
 // Positioned precisely over the colored badge callouts in the image
 const hotspots: Hotspot[] = [
-  { id: 'sales', label: 'Sales', top: '9%', left: '54%', width: '7%', height: '4.5%' },
-  { id: 'recipes', label: 'Recipes', top: '47%', left: '38%', width: '8%', height: '4.5%' },
-  { id: 'inventory', label: 'Inventory', top: '49%', left: '63%', width: '8%', height: '4.5%' },
-  { id: 'overview', label: 'Dashboard', top: '49%', left: '79%', width: '9%', height: '4.5%' },
-  { id: 'orders', label: 'Orders', top: '60%', left: '86%', width: '7%', height: '4.5%' },
-  { id: 'costs', label: 'Costs', top: '79%', left: '80%', width: '6%', height: '4.5%' },
+  { id: 'sales', label: 'Sales', top: '17%', left: '57%', width: '7%', height: '4%' },
+  { id: 'recipes', label: 'Recipes', top: '50%', left: '40%', width: '8.5%', height: '4%' },
+  { id: 'inventory', label: 'Inventory', top: '49%', left: '68%', width: '9%', height: '4%' },
+  { id: 'overview', label: 'Dashboard', top: '49%', left: '83%', width: '9.5%', height: '4%' },
+  { id: 'orders', label: 'Orders', top: '57%', left: '91%', width: '7.5%', height: '4%' },
+  { id: 'costs', label: 'Costs', top: '76%', left: '86%', width: '6.5%', height: '4%' },
 ];
 
 interface DinerHomeProps {
