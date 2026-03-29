@@ -10,30 +10,61 @@ interface Hotspot {
   height: string;
 }
 
-// Positioned precisely over the colored badge callouts in the image
 const hotspots: Hotspot[] = [
-  { id: 'sales', label: 'Sales', top: '17%', left: '57%', width: '7%', height: '4%' },
-  { id: 'recipes', label: 'Recipes', top: '50%', left: '40%', width: '8.5%', height: '4%' },
-  { id: 'inventory', label: 'Inventory', top: '49%', left: '68%', width: '9%', height: '4%' },
-  { id: 'overview', label: 'Dashboard', top: '49%', left: '83%', width: '9.5%', height: '4%' },
-  { id: 'orders', label: 'Orders', top: '57%', left: '91%', width: '7.5%', height: '4%' },
-  { id: 'costs', label: 'Costs', top: '76%', left: '86%', width: '6.5%', height: '4%' },
+  { id: 'sales', label: 'Sales', top: '10%', left: '58%', width: '8%', height: '5%' },
+  { id: 'recipes', label: 'Recipes', top: '43%', left: '36%', width: '10%', height: '5%' },
+  { id: 'inventory', label: 'Inventory', top: '43%', left: '66%', width: '10%', height: '5%' },
+  { id: 'overview', label: 'Dashboard', top: '43%', left: '82%', width: '11%', height: '5%' },
+  { id: 'orders', label: 'Orders', top: '53%', left: '85%', width: '9%', height: '5%' },
+  { id: 'costs', label: 'Costs', top: '10%', left: '72%', width: '8%', height: '5%' },
 ];
 
 interface DinerHomeProps {
   setTab: (tab: TabId) => void;
+  restaurantName?: string | null;
+  isMobile?: boolean;
 }
 
-export const DinerHome = ({ setTab }: DinerHomeProps) => {
+export const DinerHome = ({ setTab, restaurantName, isMobile }: DinerHomeProps) => {
+  const containerHeight = isMobile ? 'calc(100vh - 70px)' : '100vh';
+
   return (
-    <div className="animate-fade-up flex items-center justify-center" style={{ height: 'calc(100vh - 10px)' }}>
+    <div className="animate-fade-up flex items-center justify-center" style={{ height: containerHeight }}>
       <div className="relative inline-block max-w-full" style={{ maxHeight: '100%' }}>
         <img
           src="/diner-home.png"
           alt="Diner illustration — click a room to navigate"
           className="block max-w-full h-auto"
-          style={{ maxHeight: 'calc(100vh - 10px)' }}
+          style={{ maxHeight: containerHeight }}
           draggable={false}
+        />
+
+        {/* Restaurant name overlay */}
+        {restaurantName && (
+          <div
+            className="absolute font-bold pointer-events-none"
+            style={{
+              top: '16px',
+              left: '24px',
+              fontSize: '20px',
+              color: 'white',
+              textShadow: '0 2px 8px rgba(0,0,0,0.7), 0 1px 3px rgba(0,0,0,0.5)',
+            }}
+          >
+            {restaurantName}
+          </div>
+        )}
+
+        {/* Watermark cover */}
+        <div
+          className="absolute pointer-events-none"
+          style={{
+            bottom: 0,
+            right: 0,
+            width: '60px',
+            height: '60px',
+            background: 'linear-gradient(135deg, transparent 40%, #C4A070 100%)',
+          }}
         />
 
         {hotspots.map((h) => (
