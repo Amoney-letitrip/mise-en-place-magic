@@ -152,7 +152,7 @@ export const DinerHome = ({
                   width: '18px', height: '18px',
                   fontSize: '11px',
                   background: 'white',
-                  color: b.color,
+                  color: b.color === '#F1C40F' ? '#333' : b.color,
                 }}
               >
                 {b.count > 99 ? '99' : b.count}
