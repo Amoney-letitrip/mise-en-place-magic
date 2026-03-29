@@ -44,37 +44,37 @@ export const DinerHome = ({
 }: DinerHomeProps) => {
   const badges: BadgeConfig[] = [
     {
-      id: 'sales', label: 'Sales', top: '18%', left: '58%',
+      id: 'sales', label: 'Sales', top: '20%', left: '64%',
       color: getStatusColor(flaggedSales, 3, 3),
       count: flaggedSales || undefined,
       isUrgent: flaggedSales > 3,
     },
     {
-      id: 'recipes', label: 'Recipes', top: '52%', left: '38%',
+      id: 'recipes', label: 'Recipes', top: '44%', left: '42%',
       color: getStatusColor(draftRecipes, 2, 2),
       count: draftRecipes || undefined,
       isUrgent: draftRecipes > 2,
     },
     {
-      id: 'inventory', label: 'Inventory', top: '62%', left: '48%',
+      id: 'inventory', label: 'Inventory', top: '66%', left: '54%',
       color: getStatusColor(lowItems, 3, 3),
       count: lowItems || undefined,
       isUrgent: lowItems > 3,
     },
     {
-      id: 'overview', label: 'Overview', top: '35%', left: '82%',
+      id: 'overview', label: 'Overview', top: '36%', left: '88%',
       color: '#2980B9',
       count: undefined,
       isUrgent: false,
     },
     {
-      id: 'orders', label: 'Orders', top: '52%', left: '83%',
+      id: 'orders', label: 'Orders', top: '55%', left: '84%',
       color: getStatusColor(ordersDue, 1, 1),
       count: ordersDue || undefined,
       isUrgent: ordersDue > 1,
     },
     {
-      id: 'costs', label: 'Costs', top: '70%', left: '83%',
+      id: 'costs', label: 'Costs', top: '75%', left: '86%',
       color: '#8E44AD',
       count: undefined,
       isUrgent: false,
@@ -93,7 +93,7 @@ export const DinerHome = ({
   ];
 
   return (
-    <div className="flex items-center justify-center min-h-screen" style={{ background: '#1C1612' }}>
+    <div className="flex items-center justify-center min-h-screen" style={{ background: '#151010' }}>
       <div className="relative w-full max-w-[1400px] mx-auto">
         <img
           src="/diner-home.png"
@@ -115,6 +115,31 @@ export const DinerHome = ({
             {restaurantName}
           </div>
         )}
+
+        {/* Room labels */}
+        {[
+          { text: 'Dining Room', top: '4%', left: '35%' },
+          { text: 'Kitchen', top: '52%', left: '12%' },
+          { text: 'Storage', top: '78%', left: '35%' },
+          { text: 'Office', top: '4%', left: '85%' },
+        ].map((room) => (
+          <span
+            key={room.text}
+            className="absolute pointer-events-none select-none"
+            style={{
+              top: room.top, left: room.left,
+              transform: 'translateX(-50%)',
+              fontSize: '11px',
+              fontWeight: 600,
+              color: 'rgba(255,255,255,0.45)',
+              textTransform: 'uppercase',
+              letterSpacing: '1.5px',
+              textShadow: '0 1px 4px rgba(0,0,0,0.5)',
+            }}
+          >
+            {room.text}
+          </span>
+        ))}
 
         {/* Badge buttons */}
         {badges.map((b) => (
@@ -166,7 +191,7 @@ export const DinerHome = ({
             onClick={() => setTab('inventory')}
             className="absolute flex items-center justify-center border-0 cursor-pointer"
             style={{
-              top: '48%', left: '60%',
+              top: '42%', left: '68%',
               transform: 'translate(-50%, -50%)',
               width: '28px', height: '28px',
               borderRadius: '50%',
