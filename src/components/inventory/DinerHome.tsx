@@ -93,7 +93,7 @@ export const DinerHome = ({
   ];
 
   return (
-    <div className="flex items-center justify-center min-h-screen" style={{ background: '#1C1612' }}>
+    <div className="flex items-center justify-center min-h-screen" style={{ background: '#151010' }}>
       <div className="relative w-full max-w-[1400px] mx-auto">
         <img
           src="/diner-home.png"
