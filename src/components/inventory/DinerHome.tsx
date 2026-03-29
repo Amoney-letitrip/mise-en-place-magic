@@ -44,7 +44,7 @@ export const DinerHome = ({
 }: DinerHomeProps) => {
   const badges: BadgeConfig[] = [
     {
-      id: 'sales', label: 'Sales', top: '20%', left: '64%',
+      id: 'sales', label: 'Sales', top: '13%', left: '63%',
       color: getStatusColor(flaggedSales, 3, 3),
       count: flaggedSales || undefined,
       isUrgent: flaggedSales > 3,
