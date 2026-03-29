@@ -16,7 +16,7 @@ interface DinerHomeProps {
 
 const getStatusColor = (count: number, warnAt: number, urgentAt: number) => {
   if (count === 0) return '#27AE60';
-  if (count <= warnAt) return '#E67E22';
+  if (count <= warnAt) return '#F1C40F';
   return '#E74C3C';
 };
 
