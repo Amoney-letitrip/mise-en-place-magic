@@ -191,7 +191,7 @@ export const DinerHome = ({
             onClick={() => setTab('inventory')}
             className="absolute flex items-center justify-center border-0 cursor-pointer"
             style={{
-              top: '48%', left: '60%',
+              top: '42%', left: '68%',
               transform: 'translate(-50%, -50%)',
               width: '28px', height: '28px',
               borderRadius: '50%',
