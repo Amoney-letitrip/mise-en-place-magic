@@ -6,10 +6,20 @@ import type { Database } from '@/integrations/supabase/types';
 import { LotsModal } from './LotsModal';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { useDeleteIngredient } from '@/hooks/use-inventory-data';
+import { useDeleteIngredient, useCreateIngredient } from '@/hooks/use-inventory-data';
+import type { TabId } from '@/lib/types';
 
 type Ingredient = Database['public']['Tables']['ingredients']['Row'];
 type Lot = Database['public']['Tables']['lots']['Row'];
+type Vendor = Database['public']['Tables']['vendors']['Row'];
+
+const STORAGE_TYPES = ['room', 'fridge', 'freezer'] as const;
+
+const EMPTY_ING_FORM = {
+  name: '', unit: 'lbs', current_stock: '0', threshold: '0',
+  reorder_qty: '0', vendor: '', cost_per_unit: '0',
+  is_perishable: false, shelf_life_days: '', storage_type: 'room' as typeof STORAGE_TYPES[number],
+};
 
 interface InventoryTabProps {
   ingredients: Ingredient[];
@@ -20,17 +30,49 @@ interface InventoryTabProps {
   lowItems: Ingredient[];
   logWaste: (lot: Lot) => void;
   onUpdateIngredients?: (updates: Array<{ id: string; current_stock: number }>) => void;
+  setTab?: (tab: TabId) => void;
+  vendors?: Vendor[];
 }
 
 export const InventoryTab = ({
-  ingredients, lots, forecasts, fefo, expiredLots, lowItems, logWaste, onUpdateIngredients,
+  ingredients, lots, forecasts, fefo, expiredLots, lowItems, logWaste,
+  onUpdateIngredients, setTab, vendors = [],
 }: InventoryTabProps) => {
   const [subTab, setSubTab] = useState<'list' | 'count'>('list');
   const [lotsModal, setLotsModal] = useState<Ingredient | null>(null);
   const [cycleItems, setCycleItems] = useState<any[] | null>(null);
   const [cycleSubmitted, setCycleSubmitted] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Ingredient | null>(null);
+  const [showAddIng, setShowAddIng] = useState(false);
+  const [ingForm, setIngForm] = useState(EMPTY_ING_FORM);
   const deleteIngredient = useDeleteIngredient();
+  const createIngredient = useCreateIngredient();
+
+  const handleAddIngredient = async () => {
+    const name = ingForm.name.trim();
+    const unit = ingForm.unit.trim();
+    if (!name || !unit) { toast.error('Name and unit are required'); return; }
+    try {
+      await createIngredient.mutateAsync({
+        name,
+        unit,
+        current_stock: parseFloat(ingForm.current_stock) || 0,
+        threshold: parseFloat(ingForm.threshold) || 0,
+        reorder_qty: parseFloat(ingForm.reorder_qty) || 0,
+        vendor: ingForm.vendor.trim() || null,
+        cost_per_unit: parseFloat(ingForm.cost_per_unit) || 0,
+        is_perishable: ingForm.is_perishable,
+        shelf_life_days: ingForm.is_perishable && ingForm.shelf_life_days ? parseInt(ingForm.shelf_life_days) : null,
+        storage_type: ingForm.storage_type,
+        calib_factor: 1,
+      } as any);
+      toast.success(`"${name}" added to inventory`);
+      setShowAddIng(false);
+      setIngForm(EMPTY_ING_FORM);
+    } catch {
+      toast.error('Failed to add ingredient');
+    }
+  };
 
   const now = new Date();
 
@@ -94,7 +136,7 @@ export const InventoryTab = ({
             {subTab === 'list' && !cycleSubmitted && (
               <Button variant="outline" onClick={startCount}>🔢 Daily Count</Button>
             )}
-            <Button>+ Add Ingredient</Button>
+            <Button onClick={() => { setIngForm(EMPTY_ING_FORM); setShowAddIng(true); }}>+ Add Ingredient</Button>
           </div>
         }
       />
@@ -219,7 +261,9 @@ export const InventoryTab = ({
                         </td>
                         <td className="px-3.5 py-2.5">
                           <div className="flex gap-1.5">
-                            {ing.vendor && <Button variant="outline" size="sm">Reorder</Button>}
+                            {ing.vendor && (
+                              <Button variant="outline" size="sm" onClick={() => setTab?.('orders')}>Reorder</Button>
+                            )}
                             <button
                               onClick={() => setDeleteTarget(ing)}
                               className="text-muted-foreground/50 hover:text-destructive transition-colors p-1"
@@ -241,7 +285,7 @@ export const InventoryTab = ({
 
       {/* DAILY COUNT */}
       {subTab === 'count' && (
-        <div className="grid grid-cols-[1fr_300px] gap-3.5">
+        <div className="flex flex-col lg:grid lg:grid-cols-[1fr_300px] gap-3.5">
           <div className="bg-card border border-border rounded-lg overflow-hidden">
             <div className="px-3.5 py-2.5 border-b border-border bg-muted/30 flex justify-between items-center">
               <span className="text-[13px] text-muted-foreground">Exception items: low stock + high variance + expiring + high value</span>
@@ -362,6 +406,125 @@ export const InventoryTab = ({
           onClose={() => setLotsModal(null)}
         />
       )}
+
+      {/* Add Ingredient Dialog */}
+      <Dialog open={showAddIng} onOpenChange={open => { if (!open) setShowAddIng(false); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Add Ingredient</DialogTitle>
+            <DialogDescription>New ingredient will appear in your stock list immediately</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 py-2 max-h-[60vh] overflow-y-auto pr-1">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <label className="block text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground mb-1">Name *</label>
+                <input
+                  className="w-full px-3 py-2 border border-border rounded-md text-[13px] bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  placeholder="Ground Beef 80/20"
+                  value={ingForm.name}
+                  onChange={e => setIngForm(f => ({ ...f, name: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="block text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground mb-1">Unit *</label>
+                <input
+                  className="w-full px-3 py-2 border border-border rounded-md text-[13px] bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  placeholder="lbs"
+                  value={ingForm.unit}
+                  onChange={e => setIngForm(f => ({ ...f, unit: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="block text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground mb-1">Storage</label>
+                <select
+                  className="w-full px-3 py-2 border border-border rounded-md text-[13px] bg-background focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  value={ingForm.storage_type}
+                  onChange={e => setIngForm(f => ({ ...f, storage_type: e.target.value as typeof STORAGE_TYPES[number] }))}
+                >
+                  <option value="room">🏠 Room temp</option>
+                  <option value="fridge">❄️ Fridge</option>
+                  <option value="freezer">🧊 Freezer</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground mb-1">Current Stock</label>
+                <input
+                  type="number" min={0} step="any"
+                  className="w-full px-3 py-2 border border-border rounded-md text-[13px] bg-background focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  value={ingForm.current_stock}
+                  onChange={e => setIngForm(f => ({ ...f, current_stock: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="block text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground mb-1">Reorder Threshold</label>
+                <input
+                  type="number" min={0} step="any"
+                  className="w-full px-3 py-2 border border-border rounded-md text-[13px] bg-background focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  value={ingForm.threshold}
+                  onChange={e => setIngForm(f => ({ ...f, threshold: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="block text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground mb-1">Reorder Qty</label>
+                <input
+                  type="number" min={0} step="any"
+                  className="w-full px-3 py-2 border border-border rounded-md text-[13px] bg-background focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  value={ingForm.reorder_qty}
+                  onChange={e => setIngForm(f => ({ ...f, reorder_qty: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="block text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground mb-1">Cost / Unit ($)</label>
+                <input
+                  type="number" min={0} step="0.001"
+                  className="w-full px-3 py-2 border border-border rounded-md text-[13px] bg-background focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  value={ingForm.cost_per_unit}
+                  onChange={e => setIngForm(f => ({ ...f, cost_per_unit: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="block text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground mb-1">Vendor</label>
+                <input
+                  list="vendor-dl"
+                  className="w-full px-3 py-2 border border-border rounded-md text-[13px] bg-background focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  placeholder="Sysco"
+                  value={ingForm.vendor}
+                  onChange={e => setIngForm(f => ({ ...f, vendor: e.target.value }))}
+                />
+                <datalist id="vendor-dl">{vendors.map(v => <option key={v.id} value={v.name} />)}</datalist>
+              </div>
+              <div className="col-span-2 flex items-center gap-3">
+                <label className="flex items-center gap-2 cursor-pointer select-none text-[13px]">
+                  <input
+                    type="checkbox"
+                    className="accent-primary"
+                    checked={ingForm.is_perishable}
+                    onChange={e => setIngForm(f => ({ ...f, is_perishable: e.target.checked }))}
+                  />
+                  Perishable
+                </label>
+                {ingForm.is_perishable && (
+                  <div className="flex items-center gap-2 flex-1">
+                    <label className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground whitespace-nowrap">Shelf life (days)</label>
+                    <input
+                      type="number" min={1}
+                      className="flex-1 px-3 py-2 border border-border rounded-md text-[13px] bg-background focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      value={ingForm.shelf_life_days}
+                      onChange={e => setIngForm(f => ({ ...f, shelf_life_days: e.target.value }))}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAddIng(false)}>Cancel</Button>
+            <Button onClick={handleAddIngredient} disabled={createIngredient.isPending}>
+              {createIngredient.isPending ? 'Adding…' : 'Add Ingredient'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={!!deleteTarget} onOpenChange={open => { if (!open) setDeleteTarget(null); }}>

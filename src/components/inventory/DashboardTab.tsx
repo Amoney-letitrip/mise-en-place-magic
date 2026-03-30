@@ -25,12 +25,14 @@ export const DashboardTab = ({
 }: DashboardTabProps) => {
   const now = new Date();
   const dueOrders = orderDraft.filter(v => v.anyDue);
+  const hour = now.getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
 
   return (
     <div className="animate-fade-up">
       <div className="flex justify-between items-start mb-4">
         <div>
-          <h1 className="text-xl font-bold text-foreground">Good morning 👋</h1>
+          <h1 className="text-xl font-bold text-foreground">{greeting} 👋</h1>
           <p className="text-[13px] text-muted-foreground mt-0.5">{fmtDate(now)} · {fefo ? 'FEFO' : 'FIFO'} lot mode</p>
         </div>
       </div>

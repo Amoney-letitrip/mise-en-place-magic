@@ -25,22 +25,19 @@ export const useAppState = () => {
   const isLoading = loadingIngredients || loadingLots || loadingSales || loadingRecipes;
   const hasError = !!(errorIngredients || errorLots || errorSales || errorRecipes);
 
-  const now = new Date();
+  const expiredLots = useMemo(() => {
+    const now = new Date();
+    return lots.filter(l => l.quantity_remaining > 0 && l.expires_at && diffDays(new Date(l.expires_at), now) < 0);
+  }, [lots]);
 
-  const expiredLots = useMemo(() =>
-    lots.filter(l => l.quantity_remaining > 0 && l.expires_at && diffDays(new Date(l.expires_at), now) < 0),
-    [lots]
-  );
-
-  const expiringLots = useMemo(() =>
-    lots.filter(l => l.quantity_remaining > 0 && l.expires_at && {
-      d: diffDays(new Date(l.expires_at), now)
-    }).filter(l => {
-      const d = diffDays(new Date(l.expires_at!), now);
+  const expiringLots = useMemo(() => {
+    const now = new Date();
+    return lots.filter(l => {
+      if (!l.quantity_remaining || !l.expires_at) return false;
+      const d = diffDays(new Date(l.expires_at), now);
       return d >= 0 && d <= 2;
-    }),
-    [lots]
-  );
+    });
+  }, [lots]);
 
   const lowItems = useMemo(() =>
     ingredients.filter(i => i.current_stock <= i.threshold),

@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { StatusTag, Mono, SectionHead } from './StatusTag';
 import { Button } from '@/components/ui/button';
 import type { Database } from '@/integrations/supabase/types';
@@ -18,6 +18,8 @@ const POS_SYSTEMS = [
   { id: 'lightspeed', name: 'Lightspeed', color: '#FFC72C', desc: 'Retail & Restaurant POS' },
   { id: 'revel', name: 'Revel', color: '#E63E36', desc: 'iPad POS System' },
 ];
+
+const HISTORY_PAGE_SIZE = 20;
 
 const parseSalesCSV = (text: string) =>
   text.trim().split('\n').map(l => l.trim()).filter(Boolean).map(row => {
@@ -56,12 +58,17 @@ export const SalesTab = ({ sales, recipes, flaggedSales, fefo, ingredients, lots
   const [saleResult, setSaleResult] = useState<{ status: string; reason?: string | null } | null>(null);
   const [csvText, setCsvText] = useState('');
   const [csvResult, setCsvResult] = useState<{ err?: string; processed?: number; flagged?: number; total?: number } | null>(null);
-  const [connectedPOS, setConnectedPOS] = useState<Array<{ id: string; name: string }>>([]);
-  const [posModal, setPosModal] = useState(false);
-  const [_posSetupStep, setPosSetupStep] = useState<'list' | 'configure' | 'done'>('list');
-  const [_posSelected, _setPosSelected] = useState<typeof POS_SYSTEMS[0] | null>(null);
+  const [historyPage, setHistoryPage] = useState(1);
   const saleTimer = useRef<NodeJS.Timeout | null>(null);
   const qc = useQueryClient();
+
+  // Always-current refs to avoid stale closures in async sale recording
+  const ingredientsRef = useRef(ingredients);
+  const lotsRef = useRef(lots);
+  const fefoRef = useRef(fefo);
+  useEffect(() => { ingredientsRef.current = ingredients; }, [ingredients]);
+  useEffect(() => { lotsRef.current = lots; }, [lots]);
+  useEffect(() => { fefoRef.current = fefo; }, [fefo]);
 
   const itemPopularity = (() => {
     const counts: Record<string, number> = {};
@@ -70,9 +77,14 @@ export const SalesTab = ({ sales, recipes, flaggedSales, fefo, ingredients, lots
   })();
 
   const deductInventory = useCallback(async (recipe: RecipeWithIngredients, saleQty: number) => {
+    // Use refs so rapid back-to-back sales always see the latest stock levels
+    const currentIngredients = ingredientsRef.current;
+    const currentLots = lotsRef.current;
+    const currentFefo = fefoRef.current;
+
     for (const ri of recipe.ingredients) {
       if (!ri.ingredient_id) continue;
-      const ing = ingredients.find(i => i.id === ri.ingredient_id);
+      const ing = currentIngredients.find(i => i.id === ri.ingredient_id);
       if (!ing) continue;
 
       let deductQty = ri.qty * saleQty;
@@ -88,10 +100,10 @@ export const SalesTab = ({ sales, recipes, flaggedSales, fefo, ingredients, lots
 
       // Deplete lots (FIFO or FEFO)
       let remaining = deductQty;
-      const ingLots = lots
+      const ingLots = currentLots
         .filter(l => l.ingredient_id === ing.id && l.quantity_remaining > 0)
         .sort((a, b) =>
-          fefo && ing.is_perishable && a.expires_at && b.expires_at
+          currentFefo && ing.is_perishable && a.expires_at && b.expires_at
             ? new Date(a.expires_at).getTime() - new Date(b.expires_at).getTime()
             : new Date(a.received_at).getTime() - new Date(b.received_at).getTime()
         );
@@ -108,7 +120,7 @@ export const SalesTab = ({ sales, recipes, flaggedSales, fefo, ingredients, lots
 
     qc.invalidateQueries({ queryKey: ['ingredients'] });
     qc.invalidateQueries({ queryKey: ['lots'] });
-  }, [ingredients, lots, fefo, qc]);
+  }, [qc]);
 
   const recordSale = useCallback(async (itemName: string, qty: number, source = 'Manual') => {
     const recipe = recipes.find(r => r.name.toLowerCase() === itemName.toLowerCase());
@@ -275,124 +287,89 @@ export const SalesTab = ({ sales, recipes, flaggedSales, fefo, ingredients, lots
               <StatusTag variant="yellow">{flaggedSales.length} flagged</StatusTag>
             </div>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-[13px]">
-              <thead>
-                <tr className="bg-muted/50">
-                  <th className="text-left text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">Item</th>
-                  <th className="text-left text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">Qty</th>
-                  <th className="text-left text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">Status</th>
-                  <th className="text-left text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">Source</th>
-                  <th className="text-left text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">Time</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sales.slice(0, 20).map(s => (
-                  <tr key={s.id} className="border-b border-border/30 hover:bg-muted/30">
-                    <td className="px-3.5 py-2.5 font-semibold">{s.item}</td>
-                    <td className="px-3.5 py-2.5"><Mono>×{s.qty}</Mono></td>
-                    <td className="px-3.5 py-2.5">
-                      {s.status === 'flagged'
-                        ? <StatusTag variant="yellow">⚠ {s.reason}</StatusTag>
-                        : <StatusTag variant="green">✓ Processed</StatusTag>}
-                    </td>
-                    <td className="px-3.5 py-2.5"><StatusTag variant="slate">{s.source}</StatusTag></td>
-                    <td className="px-3.5 py-2.5 text-xs text-muted-foreground">
-                      {new Date(s.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {sales.length === 0 ? (
+            <div className="p-6 text-center text-muted-foreground text-[13px]">No sales recorded yet</div>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full text-[13px]">
+                  <thead>
+                    <tr className="bg-muted/50">
+                      <th className="text-left text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">Item</th>
+                      <th className="text-left text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">Qty</th>
+                      <th className="text-left text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">Status</th>
+                      <th className="text-left text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">Source</th>
+                      <th className="text-left text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">Time</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sales.slice(0, historyPage * HISTORY_PAGE_SIZE).map(s => (
+                      <tr key={s.id} className="border-b border-border/30 hover:bg-muted/30">
+                        <td className="px-3.5 py-2.5 font-semibold">{s.item}</td>
+                        <td className="px-3.5 py-2.5"><Mono>×{s.qty}</Mono></td>
+                        <td className="px-3.5 py-2.5">
+                          {s.status === 'flagged'
+                            ? <StatusTag variant="yellow">⚠ {s.reason}</StatusTag>
+                            : <StatusTag variant="green">✓ Processed</StatusTag>}
+                        </td>
+                        <td className="px-3.5 py-2.5"><StatusTag variant="slate">{s.source}</StatusTag></td>
+                        <td className="px-3.5 py-2.5 text-xs text-muted-foreground">
+                          {new Date(s.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {historyPage * HISTORY_PAGE_SIZE < sales.length && (
+                <div className="px-4 py-3 border-t border-border/30 flex items-center justify-between text-[13px] text-muted-foreground">
+                  <span>Showing {Math.min(historyPage * HISTORY_PAGE_SIZE, sales.length)} of {sales.length}</span>
+                  <Button variant="outline" size="sm" onClick={() => setHistoryPage(p => p + 1)}>
+                    Show more
+                  </Button>
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
 
       {/* POS INTEGRATION */}
       {subTab === 'pos' && (
         <div>
-          {connectedPOS.length === 0 && (
-            <div className="bg-card border border-dashed border-muted-foreground/30 rounded-lg p-8 text-center mb-3.5">
-              <div className="text-4xl mb-2.5">🔌</div>
-              <div className="font-bold text-base mb-1">No POS connected</div>
-              <div className="text-[13px] text-muted-foreground mb-4">Connect your point-of-sale system to automatically sync every sale into inventory tracking</div>
-              <Button onClick={() => { setPosModal(true); setPosSetupStep('list'); }}>Connect a POS System</Button>
+          <div className="bg-card border border-dashed border-muted-foreground/30 rounded-lg p-8 text-center mb-3.5">
+            <div className="text-4xl mb-2.5">🔌</div>
+            <div className="font-bold text-base mb-1">POS integrations coming soon</div>
+            <div className="text-[13px] text-muted-foreground mb-4 max-w-sm mx-auto">
+              Direct sync with Square, Toast, Clover, Lightspeed, and Revel is on the roadmap.
+              In the meantime, record sales manually or import via CSV.
             </div>
-          )}
-
-          {connectedPOS.length > 0 && (
-            <div className="mb-3.5">
-              {connectedPOS.map(pos => {
-                const info = POS_SYSTEMS.find(p => p.id === pos.id);
-                return (
-                  <div key={pos.id} className="bg-card border border-emerald-200 rounded-lg p-4 mb-2 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-lg flex items-center justify-center text-xs font-bold font-mono" style={{ background: info?.color + '22', border: `1px solid ${info?.color}44`, color: info?.color }}>■</div>
-                      <div>
-                        <div className="font-bold text-sm">{pos.name}</div>
-                        <div className="text-xs text-emerald-600 flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full inline-block" />
-                          Syncing sales live
-                        </div>
-                      </div>
-                    </div>
-                    <Button variant="outline" size="sm" onClick={() => { setConnectedPOS(prev => prev.filter(c => c.id !== pos.id)); toast.success(`${pos.name} disconnected`); }}>Disconnect</Button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 mb-3.5">
-            {POS_SYSTEMS.map(pos => {
-              const connected = connectedPOS.some(c => c.id === pos.id);
-              return (
-                <div key={pos.id} className="bg-card border border-border rounded-lg p-3.5">
-                  <div className="flex items-center gap-2.5 mb-2">
-                    <div className="w-[34px] h-[34px] rounded-lg flex items-center justify-center text-xs font-bold font-mono" style={{ background: pos.color + '22', border: `1px solid ${pos.color}44`, color: pos.color }}>■</div>
-                    <div>
-                      <div className="font-bold text-[13px]">{pos.name}</div>
-                      <div className="text-[11px] text-muted-foreground">{pos.desc}</div>
-                    </div>
-                  </div>
-                  <div className="flex gap-1.5">
-                    {connected ? (
-                      <StatusTag variant="green">✓ Connected</StatusTag>
-                    ) : (
-                      <Button size="sm" onClick={() => {
-                        setConnectedPOS(prev => [...prev, { id: pos.id, name: pos.name }]);
-                        toast.success(`${pos.name} connected`);
-                      }}>Connect</Button>
-                    )}
-                  </div>
+            <div className="flex justify-center gap-2 flex-wrap">
+              {POS_SYSTEMS.map(pos => (
+                <div
+                  key={pos.id}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border text-[12px] font-semibold text-muted-foreground"
+                  style={{ borderColor: pos.color + '55', color: pos.color }}
+                >
+                  {pos.name}
                 </div>
-              );
-            })}
+              ))}
+            </div>
           </div>
 
           <div className="bg-card border border-border rounded-lg p-4">
             <div className="font-semibold text-[13px] mb-1.5">Manual API / Webhook</div>
-            <div className="text-xs text-muted-foreground mb-2">Point any system to our endpoint</div>
+            <div className="text-xs text-muted-foreground mb-2">
+              If you have a custom POS or ordering system, point it to your Supabase endpoint to push sales automatically.
+            </div>
             <div className="flex gap-2 items-center bg-muted/50 rounded-lg p-2.5 border border-border/50">
-              <code className="flex-1 text-[11px] font-mono text-foreground">POST https://yourdomain.com/api/sales</code>
-              <Button variant="outline" size="sm" onClick={() => { navigator.clipboard.writeText('https://yourdomain.com/api/sales'); toast.success('Webhook URL copied'); }}>Copy</Button>
+              <code className="flex-1 text-[11px] font-mono text-foreground truncate">
+                supabase.from('sales').insert(&#123; item, qty, source, user_id &#125;)
+              </code>
             </div>
-            <div className="mt-2 text-[11px] text-muted-foreground font-mono">
-              Headers: x-api-key · Body: {'{ menuItemName, quantity, timestamp }'}
+            <div className="mt-2 text-[11px] text-muted-foreground">
+              See the Supabase dashboard for your project URL and anon key.
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* POS Modal */}
-      {posModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setPosModal(false)}>
-          <div className="bg-card border border-border rounded-xl p-6 w-full max-w-md" onClick={e => e.stopPropagation()}>
-            <h3 className="font-bold text-lg mb-4">Connect POS System</h3>
-            <p className="text-sm text-muted-foreground mb-4">
-              POS integrations are coming soon. For now, record sales manually or import via CSV.
-            </p>
-            <Button className="w-full" onClick={() => setPosModal(false)}>Close</Button>
           </div>
         </div>
       )}

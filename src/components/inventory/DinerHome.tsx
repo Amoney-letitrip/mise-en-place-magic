@@ -62,7 +62,7 @@ export const DinerHome = ({
       isUrgent: lowItems > 3,
     },
     {
-      id: 'overview', label: 'Overview', top: '49%', left: '90%',
+      id: 'overview', label: 'Overview', top: '49%', left: '87%',
       color: (() => { const total = lowItems + flaggedSales + draftRecipes + ordersDue + expiredLots + expiringLots; return getStatusColor(total, 5, 5); })(),
       count: (() => { const total = lowItems + flaggedSales + draftRecipes + ordersDue + expiredLots + expiringLots; return total || undefined; })(),
       isUrgent: (lowItems + flaggedSales + draftRecipes + ordersDue + expiredLots + expiringLots) > 5,
@@ -94,7 +94,7 @@ export const DinerHome = ({
 
   return (
     <div className="flex items-center justify-center min-h-screen" style={{ background: '#151010' }}>
-      <div className="relative w-full max-w-[1400px] mx-auto">
+      <div className="relative w-full max-w-[1400px] mx-auto overflow-hidden">
         <img
           src="/diner-home.png"
           alt="Diner illustration — click areas to navigate"

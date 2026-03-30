@@ -71,7 +71,8 @@ export const AppNav = ({ tab, setTab, fefo, setFefo, navItems, restaurantName }:
           <button
             onClick={signOut}
             className="w-[30px] h-[30px] bg-primary rounded-full flex items-center justify-center font-bold text-xs text-primary-foreground hover:opacity-80 transition-opacity"
-            title={user?.email || 'Sign out'}
+            title={`Sign out (${user?.email || 'account'})`}
+            aria-label="Sign out"
           >
             {(user?.email?.[0] || 'U').toUpperCase()}
           </button>

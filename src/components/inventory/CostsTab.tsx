@@ -4,6 +4,7 @@ import type { Database } from '@/integrations/supabase/types';
 import type { TabId } from '@/lib/types';
 
 type Ingredient = Database['public']['Tables']['ingredients']['Row'];
+type Lot = Database['public']['Tables']['lots']['Row'];
 
 interface RecipeWithIngredients {
   id: string;
@@ -17,10 +18,16 @@ interface CostsTabProps {
   ingredients: Ingredient[];
   recipes: RecipeWithIngredients[];
   setTab?: (tab: TabId) => void;
+  expiredLots?: Lot[];
 }
 
-export const CostsTab = ({ ingredients, recipes, setTab }: CostsTabProps) => {
+export const CostsTab = ({ ingredients, recipes, setTab, expiredLots = [] }: CostsTabProps) => {
   const totalIngCost = ingredients.reduce((sum, ing) => sum + ing.current_stock * ing.cost_per_unit, 0);
+
+  const wasteValue = expiredLots.reduce((sum, lot) => {
+    const ing = ingredients.find(i => i.id === lot.ingredient_id);
+    return sum + lot.quantity_remaining * (ing?.cost_per_unit ?? 0);
+  }, 0);
 
   const recipeMargins = recipes.filter(r => r.status === 'verified').map(r => {
     const cost = r.ingredients.reduce((s, ri) => {
@@ -55,10 +62,14 @@ export const CostsTab = ({ ingredients, recipes, setTab }: CostsTabProps) => {
           <div className="text-4xl font-extrabold leading-none mb-1 text-foreground">${totalIngCost.toFixed(0)}</div>
           <div className="text-[11px] text-muted-foreground">current on-hand stock</div>
         </div>
-        <div className="bg-amber-50/50 border border-amber-200 rounded-lg p-4">
+        <div className={`rounded-lg p-4 ${wasteValue > 0 ? 'bg-amber-50/50 border border-amber-200' : 'bg-card border border-border'}`}>
           <div className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">🗑 Est. Waste Value</div>
-          <div className="text-4xl font-extrabold leading-none mb-1 text-amber-600">$0</div>
-          <div className="text-[11px] text-muted-foreground">from expired lots</div>
+          <div className={`text-4xl font-extrabold leading-none mb-1 ${wasteValue > 0 ? 'text-amber-600' : 'text-muted-foreground/30'}`}>
+            ${wasteValue.toFixed(2)}
+          </div>
+          <div className="text-[11px] text-muted-foreground">
+            {expiredLots.length > 0 ? `${expiredLots.length} expired lot${expiredLots.length !== 1 ? 's' : ''}` : 'No expired lots'}
+          </div>
         </div>
       </div>
 
@@ -129,30 +140,36 @@ export const CostsTab = ({ ingredients, recipes, setTab }: CostsTabProps) => {
           <div className="font-bold text-sm">Ingredient Unit Costs</div>
           <div className="text-xs text-muted-foreground mt-0.5">Edit to keep margins accurate</div>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-[13px]">
-            <thead>
-              <tr className="bg-muted/50">
-                <th className="text-left text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">Ingredient</th>
-                <th className="text-left text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">Unit</th>
-                <th className="text-left text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">Cost / Unit</th>
-                <th className="text-left text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">On Hand</th>
-                <th className="text-left text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">Stock Value</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ingredients.map(ing => (
-                <tr key={ing.id} className="border-b border-border/30">
-                  <td className="px-3.5 py-2.5 font-semibold">{ing.name}</td>
-                  <td className="px-3.5 py-2.5"><StatusTag variant="slate">{ing.unit}</StatusTag></td>
-                  <td className="px-3.5 py-2.5"><Mono>${ing.cost_per_unit.toFixed(3)}</Mono></td>
-                  <td className="px-3.5 py-2.5"><Mono>{fmtN(ing.current_stock)}</Mono></td>
-                  <td className="px-3.5 py-2.5"><Mono>${(ing.current_stock * ing.cost_per_unit).toFixed(2)}</Mono></td>
+        {ingredients.length === 0 ? (
+          <div className="p-6 text-center text-muted-foreground text-[13px]">
+            No ingredients yet — add ingredients to track unit costs and inventory value
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-[13px]">
+              <thead>
+                <tr className="bg-muted/50">
+                  <th className="text-left text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">Ingredient</th>
+                  <th className="text-left text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">Unit</th>
+                  <th className="text-left text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">Cost / Unit</th>
+                  <th className="text-left text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">On Hand</th>
+                  <th className="text-left text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">Stock Value</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {ingredients.map(ing => (
+                  <tr key={ing.id} className="border-b border-border/30">
+                    <td className="px-3.5 py-2.5 font-semibold">{ing.name}</td>
+                    <td className="px-3.5 py-2.5"><StatusTag variant="slate">{ing.unit}</StatusTag></td>
+                    <td className="px-3.5 py-2.5"><Mono>${ing.cost_per_unit.toFixed(3)}</Mono></td>
+                    <td className="px-3.5 py-2.5"><Mono>{fmtN(ing.current_stock)}</Mono></td>
+                    <td className="px-3.5 py-2.5"><Mono>${(ing.current_stock * ing.cost_per_unit).toFixed(2)}</Mono></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

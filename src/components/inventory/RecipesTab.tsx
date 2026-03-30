@@ -71,6 +71,12 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
     return user.id;
   };
 
+  const getUser = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+    return user;
+  };
+
   const dedupeRecipes = useCallback((rawRecipes: ScannedRecipe[]) => {
     const seen = new Set<string>();
     const deduped: ScannedRecipe[] = [];
@@ -212,8 +218,11 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
   const verifyRecipe = useCallback(async (id: string) => {
     const r = recipes.find(x => x.id === id);
     if (!r) return;
+    let verifiedBy = 'Manager';
     try {
-      const userId = await getUserId();
+      const user = await getUser();
+      verifiedBy = user.email || user.id;
+      const userId = user.id;
       for (const ri of r.ingredients) {
         if (ri.ingredient_id) continue;
         const { data: existing } = await supabase
@@ -238,7 +247,11 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
     } catch (e) {
       console.error('Auto-link ingredients failed:', e);
     }
-    const { error } = await supabase.from('recipes').update({ status: 'verified', verified_by: 'Manager', verified_date: new Date().toLocaleDateString() }).eq('id', id);
+    const { error } = await supabase.from('recipes').update({
+      status: 'verified',
+      verified_by: verifiedBy,
+      verified_date: new Date().toISOString().split('T')[0],
+    }).eq('id', id);
     if (error) { toast.error('Failed to verify'); return; }
     qc.invalidateQueries({ queryKey: ['recipes-with-ingredients'] });
     qc.invalidateQueries({ queryKey: ['ingredients'] });
@@ -251,7 +264,10 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
     const drafts = recipes.filter(r => r.status === 'draft');
     setBulkProgress({ current: 0, total: drafts.length });
     try {
-      const userId = await getUserId();
+      const user = await getUser();
+      const userId = user.id;
+      const verifiedBy = user.email || user.id;
+      const verifiedDate = new Date().toISOString().split('T')[0];
       for (let i = 0; i < drafts.length; i++) {
         const r = drafts[i];
         setBulkProgress({ current: i + 1, total: drafts.length });
@@ -276,7 +292,11 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
             await supabase.from('recipe_ingredients').update({ ingredient_id: ingredientId }).eq('id', ri.id);
           }
         }
-        await supabase.from('recipes').update({ status: 'verified', verified_by: 'Manager', verified_date: new Date().toLocaleDateString() }).eq('id', r.id);
+        await supabase.from('recipes').update({
+          status: 'verified',
+          verified_by: verifiedBy,
+          verified_date: verifiedDate,
+        }).eq('id', r.id);
       }
       qc.invalidateQueries({ queryKey: ['recipes-with-ingredients'] });
       qc.invalidateQueries({ queryKey: ['ingredients'] });

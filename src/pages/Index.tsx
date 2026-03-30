@@ -28,7 +28,8 @@ const Index = () => {
     if (!loadingProfile && profile === null) {
       ensureProfile.mutate();
     }
-  }, [loadingProfile, profile]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadingProfile, profile, ensureProfile.mutate]);
 
   const capBadge = (n: number) => n > 99 ? 99 : n;
   const navItems: Array<{ id: TabId; label: string; badge?: number | null; badgeLabel?: string }> = [
@@ -136,6 +137,8 @@ const Index = () => {
             lowItems={state.lowItems}
             logWaste={state.logWaste}
             onUpdateIngredients={updates => state.bulkUpdateIngredients.mutate(updates)}
+            setTab={state.setTab}
+            vendors={state.vendors}
           />
         )}
 
@@ -174,6 +177,7 @@ const Index = () => {
             ingredients={state.ingredients}
             recipes={state.recipes}
             setTab={state.setTab}
+            expiredLots={state.expiredLots}
           />
         )}
       </div>

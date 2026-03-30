@@ -254,6 +254,37 @@ export const useUpdateProfile = () => {
   });
 };
 
+export const useCreateVendor = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vendor: { name: string; email?: string | null; phone?: string | null; lead_time_days?: number; notes?: string | null }) => {
+      const userId = await getUserId();
+      const { data, error } = await supabase
+        .from('vendors')
+        .insert({ ...vendor, user_id: userId })
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['vendors'] }),
+  });
+};
+
+export const useUpdateVendor = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, updates }: { id: string; updates: { name?: string; email?: string | null; phone?: string | null; lead_time_days?: number; notes?: string | null } }) => {
+      const { error } = await supabase
+        .from('vendors')
+        .update(updates)
+        .eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['vendors'] }),
+  });
+};
+
 export const useUpdateRecipe = () => {
   const qc = useQueryClient();
   return useMutation({

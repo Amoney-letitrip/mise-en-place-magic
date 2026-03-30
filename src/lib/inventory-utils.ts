@@ -12,8 +12,8 @@ export const diffDays = (a: Date, b: Date): number => (a.getTime() - b.getTime()
 export const fmtDate = (d: Date | string): string =>
   new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
-export const fmtN = (n: number): number | string =>
-  typeof n !== 'number' || isNaN(n) ? '—' as any : Number.isInteger(n) ? n : parseFloat(n.toFixed(1));
+export const fmtN = (n: number): string =>
+  typeof n !== 'number' || isNaN(n) ? '—' : Number.isInteger(n) ? String(n) : n.toFixed(1);
 
 export const roundUp = (n: number, step = 1): number => Math.ceil(n / step) * step;
 

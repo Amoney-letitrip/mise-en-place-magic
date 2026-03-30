@@ -1,11 +1,16 @@
 import { useState } from 'react';
 import { StatusTag, Mono } from './StatusTag';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { fmtDate, fmtN, diffDays, addDays } from '@/lib/inventory-utils';
 import type { Database } from '@/integrations/supabase/types';
+import { useCreateVendor, useUpdateVendor } from '@/hooks/use-inventory-data';
+import { toast } from 'sonner';
 
 type Ingredient = Database['public']['Tables']['ingredients']['Row'];
 type Vendor = Database['public']['Tables']['vendors']['Row'];
+
+const EMPTY_VENDOR_FORM = { name: '', email: '', phone: '', lead_time_days: '2', notes: '' };
 
 interface OrderVendor {
   vendor: string;
@@ -33,7 +38,48 @@ const buildMailto = (ve: OrderVendor, vendors: Vendor[]) => {
 
 export const OrdersTab = ({ orderDraft, vendors, forecasts, targetDays, setTargetDays }: OrdersTabProps) => {
   const [subTab, setSubTab] = useState<'orders' | 'vendors'>('orders');
+  const [vendorForm, setVendorForm] = useState(EMPTY_VENDOR_FORM);
+  const [editTarget, setEditTarget] = useState<Vendor | null>(null);
+  const [showAddVendor, setShowAddVendor] = useState(false);
+  const createVendor = useCreateVendor();
+  const updateVendor = useUpdateVendor();
   const now = new Date();
+
+  const openEditVendor = (v: Vendor) => {
+    setEditTarget(v);
+    setVendorForm({
+      name: v.name,
+      email: v.email ?? '',
+      phone: v.phone ?? '',
+      lead_time_days: String(v.lead_time_days ?? 2),
+      notes: v.notes ?? '',
+    });
+  };
+
+  const handleSaveVendor = async () => {
+    const payload = {
+      name: vendorForm.name.trim(),
+      email: vendorForm.email.trim() || null,
+      phone: vendorForm.phone.trim() || null,
+      lead_time_days: Math.max(0, parseInt(vendorForm.lead_time_days) || 2),
+      notes: vendorForm.notes.trim() || null,
+    };
+    if (!payload.name) { toast.error('Vendor name is required'); return; }
+    try {
+      if (editTarget) {
+        await updateVendor.mutateAsync({ id: editTarget.id, updates: payload });
+        toast.success('Vendor updated');
+        setEditTarget(null);
+      } else {
+        await createVendor.mutateAsync(payload);
+        toast.success('Vendor added');
+        setShowAddVendor(false);
+      }
+      setVendorForm(EMPTY_VENDOR_FORM);
+    } catch {
+      toast.error('Failed to save vendor');
+    }
+  };
 
   return (
     <div className="animate-fade-up">
@@ -56,7 +102,10 @@ export const OrdersTab = ({ orderDraft, vendors, forecasts, targetDays, setTarge
               min={1}
               max={30}
               value={targetDays}
-              onChange={e => setTargetDays(Number(e.target.value) || 7)}
+              onChange={e => {
+                const v = Math.min(30, Math.max(1, parseInt(e.target.value) || 7));
+                setTargetDays(v);
+              }}
               className="w-[55px] text-center py-1 px-2 border border-border rounded-md text-[13px] bg-card focus:outline-none focus:ring-2 focus:ring-primary/20"
             />
             days
@@ -177,39 +226,84 @@ export const OrdersTab = ({ orderDraft, vendors, forecasts, targetDays, setTarge
         <div>
           <div className="flex justify-between items-center mb-3.5">
             <div className="text-[13px] text-muted-foreground">Manage supplier contacts, lead times, and delivery windows</div>
-            <Button>+ Add Vendor</Button>
+            <Button onClick={() => { setVendorForm(EMPTY_VENDOR_FORM); setShowAddVendor(true); }}>+ Add Vendor</Button>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {vendors.map(vm => (
-              <div key={vm.id} className="bg-card border border-border rounded-lg p-4">
-                <div className="font-bold text-[15px] mb-2.5">{vm.name}</div>
-                <div className="grid gap-1.5 mb-3">
-                  {vm.email && (
-                    <div className="flex gap-1.5 items-center text-[13px]">
-                      📧 <a href={`mailto:${vm.email}`} className="text-primary hover:underline">{vm.email}</a>
-                    </div>
-                  )}
-                  {vm.phone && (
-                    <div className="flex gap-1.5 items-center text-[13px] font-mono text-foreground">📞 {vm.phone}</div>
-                  )}
-                  <div className="flex gap-1.5 items-center text-xs text-muted-foreground">⏱ {vm.lead_time_days}d lead time</div>
-                  {vm.notes && (
-                    <div className="text-xs text-muted-foreground border-t border-border/30 pt-1.5 italic">{vm.notes}</div>
-                  )}
+          {vendors.length === 0 ? (
+            <div className="bg-card border border-dashed border-border rounded-lg p-8 text-center text-muted-foreground text-[13px]">
+              No vendors yet — add your first supplier to start generating purchase orders
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {vendors.map(vm => (
+                <div key={vm.id} className="bg-card border border-border rounded-lg p-4">
+                  <div className="font-bold text-[15px] mb-2.5">{vm.name}</div>
+                  <div className="grid gap-1.5 mb-3">
+                    {vm.email && (
+                      <div className="flex gap-1.5 items-center text-[13px]">
+                        📧 <a href={`mailto:${vm.email}`} className="text-primary hover:underline">{vm.email}</a>
+                      </div>
+                    )}
+                    {vm.phone && (
+                      <div className="flex gap-1.5 items-center text-[13px] font-mono text-foreground">📞 {vm.phone}</div>
+                    )}
+                    <div className="flex gap-1.5 items-center text-xs text-muted-foreground">⏱ {vm.lead_time_days}d lead time</div>
+                    {vm.notes && (
+                      <div className="text-xs text-muted-foreground border-t border-border/30 pt-1.5 italic">{vm.notes}</div>
+                    )}
+                  </div>
+                  <div className="flex gap-1.5">
+                    {vm.email && (
+                      <a href={`mailto:${vm.email}`}>
+                        <Button variant="outline" size="sm">📧 Email</Button>
+                      </a>
+                    )}
+                    <Button variant="outline" size="sm" onClick={() => openEditVendor(vm)}>Edit</Button>
+                  </div>
                 </div>
-                <div className="flex gap-1.5">
-                  {vm.email && (
-                    <a href={`mailto:${vm.email}`}>
-                      <Button variant="outline" size="sm">📧 Email</Button>
-                    </a>
-                  )}
-                  <Button variant="outline" size="sm">Edit</Button>
-                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Add / Edit Vendor Dialog */}
+      <Dialog
+        open={showAddVendor || !!editTarget}
+        onOpenChange={open => { if (!open) { setShowAddVendor(false); setEditTarget(null); setVendorForm(EMPTY_VENDOR_FORM); } }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editTarget ? `Edit ${editTarget.name}` : 'Add Vendor'}</DialogTitle>
+            <DialogDescription>Supplier contact and ordering details</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 py-2">
+            {[
+              { label: 'Name *', key: 'name', placeholder: 'Sysco', type: 'text' },
+              { label: 'Email', key: 'email', placeholder: 'orders@sysco.com', type: 'email' },
+              { label: 'Phone', key: 'phone', placeholder: '+1 555-555-5555', type: 'tel' },
+              { label: 'Lead time (days)', key: 'lead_time_days', placeholder: '2', type: 'number' },
+              { label: 'Notes', key: 'notes', placeholder: 'Cash & carry, no min order', type: 'text' },
+            ].map(f => (
+              <div key={f.key}>
+                <label className="block text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground mb-1">{f.label}</label>
+                <input
+                  type={f.type}
+                  value={vendorForm[f.key as keyof typeof vendorForm]}
+                  onChange={e => setVendorForm(prev => ({ ...prev, [f.key]: e.target.value }))}
+                  placeholder={f.placeholder}
+                  className="w-full px-3 py-2 border border-border rounded-md text-[13px] bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                />
               </div>
             ))}
           </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowAddVendor(false); setEditTarget(null); setVendorForm(EMPTY_VENDOR_FORM); }}>Cancel</Button>
+            <Button onClick={handleSaveVendor} disabled={createVendor.isPending || updateVendor.isPending}>
+              {createVendor.isPending || updateVendor.isPending ? 'Saving…' : editTarget ? 'Save Changes' : 'Add Vendor'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
