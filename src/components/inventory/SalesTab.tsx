@@ -182,7 +182,7 @@ export const SalesTab = ({ sales, recipes, flaggedSales, fefo, ingredients, lots
         </button>
         <button onClick={() => setSubTab('pos')} className={`pb-2 text-[13px] font-semibold border-b-2 transition-colors flex items-center gap-1.5 ${subTab === 'pos' ? 'text-primary border-primary' : 'text-muted-foreground border-transparent hover:text-foreground'}`}>
           POS Integration
-          {connectedPOS.length > 0 ? <StatusTag variant="green">Connected</StatusTag> : <StatusTag variant="slate">Not set up</StatusTag>}
+          <StatusTag variant="slate">Coming soon</StatusTag>
         </button>
       </div>
 
