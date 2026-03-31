@@ -472,7 +472,7 @@ export const SalesTab = ({ sales, recipes, flaggedSales, fefo, ingredients, lots
               After connecting, configure your POS to send sale events to this URL so inventory updates in real time:
             </p>
             <div className="bg-muted/50 rounded-lg p-2.5 border border-border/50 font-mono text-[11px] break-all">
-              {import.meta.env.VITE_SUPABASE_URL}/functions/v1/pos-webhook?provider=<span className="text-primary">square</span>
+              {(import.meta.env.VITE_SUPABASE_URL as string) || 'https://[project].supabase.co'}/functions/v1/pos-webhook?provider=<span className="text-primary">square</span>
             </div>
             <div className="mt-1.5 text-[11px] text-muted-foreground">
               Replace <Mono>square</Mono> with the provider name. See Supabase Edge Function logs for webhook delivery status.

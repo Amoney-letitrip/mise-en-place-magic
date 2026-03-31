@@ -18,7 +18,7 @@ import { toast } from 'sonner';
 import { useCreateIngredient, useCreateLot } from '@/hooks/use-inventory-data';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
 
 const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
 const MAX_FILES = 10;
@@ -71,8 +71,17 @@ export const InvoiceSetup = () => {
   const createLot = useCreateLot();
 
   const addFiles = useCallback((incoming: File[]) => {
-    const valid = incoming.filter(f => ACCEPTED_TYPES.includes(f.type));
-    if (valid.length < incoming.length) {
+    const MAX_FILE_SIZE_MB = 8;
+    const valid = incoming.filter(f => {
+      if (!ACCEPTED_TYPES.includes(f.type)) return false;
+      if (f.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+        toast.warning(`"${f.name}" is over ${MAX_FILE_SIZE_MB}MB and was skipped. Compress the PDF or use a smaller image.`);
+        return false;
+      }
+      return true;
+    });
+    const typeFiltered = incoming.filter(f => !ACCEPTED_TYPES.includes(f.type));
+    if (typeFiltered.length > 0) {
       toast.warning('Only JPG, PNG, WebP, and PDF files are supported');
     }
     setFiles(prev => {

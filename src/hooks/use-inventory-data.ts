@@ -340,28 +340,36 @@ export const useInitiatePOSOAuth = () => {
 
       const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
       const redirectUri = `${SUPABASE_URL}/functions/v1/pos-oauth-callback`;
+
+      const CLIENT_ID_KEYS: Record<string, string> = {
+        square:     'VITE_SQUARE_CLIENT_ID',
+        clover:     'VITE_CLOVER_CLIENT_ID',
+        toast:      'VITE_TOAST_CLIENT_ID',
+        lightspeed: 'VITE_LIGHTSPEED_CLIENT_ID',
+      };
+
+      const clientId = (import.meta.env as Record<string, string>)[CLIENT_ID_KEYS[posType]];
+      if (!clientId) {
+        throw new Error(
+          `${posType.charAt(0).toUpperCase() + posType.slice(1)} client ID is not configured. ` +
+          `Add ${CLIENT_ID_KEYS[posType]} to your environment variables in Lovable → Supabase settings.`
+        );
+      }
+
       const state = btoa(JSON.stringify({
         userId: user.id,
         posType,
         redirectTo: window.location.origin,
       }));
 
-      const CLIENT_IDS: Record<string, string> = {
-        square: import.meta.env.VITE_SQUARE_CLIENT_ID || '',
-        clover: import.meta.env.VITE_CLOVER_CLIENT_ID || '',
-        toast: import.meta.env.VITE_TOAST_CLIENT_ID || '',
-        lightspeed: import.meta.env.VITE_LIGHTSPEED_CLIENT_ID || '',
-      };
-
       const OAUTH_URLS: Record<string, string> = {
-        square: `https://connect.squareup.com/oauth2/authorize?client_id=${CLIENT_IDS.square}&scope=PAYMENTS_READ+ORDERS_READ&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`,
-        clover: `https://www.clover.com/oauth/v2/authorize?client_id=${CLIENT_IDS.clover}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`,
-        toast: `https://ws-api.toasttab.com/authentication/v1/authentication/login?client_id=${CLIENT_IDS.toast}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`,
-        lightspeed: `https://cloud.lightspeedapp.com/oauth/authorize.php?response_type=code&client_id=${CLIENT_IDS.lightspeed}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`,
+        square:     `https://connect.squareup.com/oauth2/authorize?client_id=${clientId}&scope=PAYMENTS_READ+ORDERS_READ&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`,
+        clover:     `https://www.clover.com/oauth/v2/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`,
+        toast:      `https://ws-api.toasttab.com/authentication/v1/authentication/login?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`,
+        lightspeed: `https://cloud.lightspeedapp.com/oauth/authorize.php?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`,
       };
 
-      const oauthUrl = OAUTH_URLS[posType];
-      window.location.href = oauthUrl;
+      window.location.href = OAUTH_URLS[posType];
     },
   });
 };

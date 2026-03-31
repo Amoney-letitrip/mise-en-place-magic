@@ -141,8 +141,14 @@ serve(async (req) => {
     return Response.redirect(`${redirectTo}?pos_error=no_access_token`, 302);
   }
 
-  // Persist to DB using service-role key (bypasses RLS since we already validated userId from state)
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+  // Verify the userId from state actually exists in auth.users (CSRF protection)
+  const { data: userRecord, error: userLookupError } = await supabase.auth.admin.getUserById(userId);
+  if (userLookupError || !userRecord?.user) {
+    console.error("State userId not found in auth.users:", userId, userLookupError);
+    return Response.redirect(`${redirectTo}?pos_error=invalid_user`, 302);
+  }
 
   const { error: dbError } = await supabase
     .from("pos_connections")
