@@ -285,6 +285,89 @@ export const useUpdateVendor = () => {
   });
 };
 
+// ─── POS Connections ──────────────────────────────────────────────────────────
+
+export interface POSConnection {
+  id: string;
+  user_id: string;
+  pos_type: 'square' | 'clover' | 'toast' | 'lightspeed';
+  merchant_id: string | null;
+  location_id: string | null;
+  status: 'connected' | 'disconnected' | 'error';
+  error_message: string | null;
+  connected_at: string | null;
+  last_sync_at: string | null;
+}
+
+export const usePOSConnections = () =>
+  useQuery({
+    queryKey: ['pos_connections'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('pos_connections')
+        .select('id,user_id,pos_type,merchant_id,location_id,status,error_message,connected_at,last_sync_at');
+      if (error) throw error;
+      return (data ?? []) as POSConnection[];
+    },
+  });
+
+export const useDisconnectPOS = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (posType: string) => {
+      const userId = await getUserId();
+      const { error } = await supabase
+        .from('pos_connections')
+        .update({
+          status: 'disconnected',
+          access_token: null,
+          refresh_token: null,
+          connected_at: null,
+        })
+        .eq('user_id', userId)
+        .eq('pos_type', posType);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['pos_connections'] }),
+  });
+};
+
+export const useInitiatePOSOAuth = () => {
+  return useMutation({
+    mutationFn: async (posType: 'square' | 'clover' | 'toast' | 'lightspeed') => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+
+      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
+      const redirectUri = `${SUPABASE_URL}/functions/v1/pos-oauth-callback`;
+      const state = btoa(JSON.stringify({
+        userId: user.id,
+        posType,
+        redirectTo: window.location.origin,
+      }));
+
+      const CLIENT_IDS: Record<string, string> = {
+        square: import.meta.env.VITE_SQUARE_CLIENT_ID || '',
+        clover: import.meta.env.VITE_CLOVER_CLIENT_ID || '',
+        toast: import.meta.env.VITE_TOAST_CLIENT_ID || '',
+        lightspeed: import.meta.env.VITE_LIGHTSPEED_CLIENT_ID || '',
+      };
+
+      const OAUTH_URLS: Record<string, string> = {
+        square: `https://connect.squareup.com/oauth2/authorize?client_id=${CLIENT_IDS.square}&scope=PAYMENTS_READ+ORDERS_READ&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`,
+        clover: `https://www.clover.com/oauth/v2/authorize?client_id=${CLIENT_IDS.clover}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`,
+        toast: `https://ws-api.toasttab.com/authentication/v1/authentication/login?client_id=${CLIENT_IDS.toast}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`,
+        lightspeed: `https://cloud.lightspeedapp.com/oauth/authorize.php?response_type=code&client_id=${CLIENT_IDS.lightspeed}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`,
+      };
+
+      const oauthUrl = OAUTH_URLS[posType];
+      window.location.href = oauthUrl;
+    },
+  });
+};
+
+// ─── Recipe mutations ─────────────────────────────────────────────────────────
+
 export const useUpdateRecipe = () => {
   const qc = useQueryClient();
   return useMutation({

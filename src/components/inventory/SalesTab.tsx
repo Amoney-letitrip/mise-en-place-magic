@@ -6,17 +6,17 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { convertUnit } from '@/lib/inventory-utils';
+import { usePOSConnections, useDisconnectPOS, useInitiatePOSOAuth } from '@/hooks/use-inventory-data';
 
 type Sale = Database['public']['Tables']['sales']['Row'];
 type Ingredient = Database['public']['Tables']['ingredients']['Row'];
 type Lot = Database['public']['Tables']['lots']['Row'];
 
 const POS_SYSTEMS = [
-  { id: 'square', name: 'Square', color: '#00A8E0', desc: 'Point of Sale & Payments' },
-  { id: 'toast', name: 'Toast', color: '#FF4C00', desc: 'Restaurant Management Platform' },
-  { id: 'clover', name: 'Clover', color: '#1DA462', desc: 'Smart POS System' },
-  { id: 'lightspeed', name: 'Lightspeed', color: '#FFC72C', desc: 'Retail & Restaurant POS' },
-  { id: 'revel', name: 'Revel', color: '#E63E36', desc: 'iPad POS System' },
+  { id: 'square' as const,     name: 'Square',     color: '#00A8E0', desc: 'Point of Sale & Payments' },
+  { id: 'toast' as const,      name: 'Toast',      color: '#FF4C00', desc: 'Restaurant Management Platform' },
+  { id: 'clover' as const,     name: 'Clover',     color: '#1DA462', desc: 'Smart POS System' },
+  { id: 'lightspeed' as const, name: 'Lightspeed', color: '#FFC72C', desc: 'Retail & Restaurant POS' },
 ];
 
 const HISTORY_PAGE_SIZE = 20;
@@ -59,8 +59,13 @@ export const SalesTab = ({ sales, recipes, flaggedSales, fefo, ingredients, lots
   const [csvText, setCsvText] = useState('');
   const [csvResult, setCsvResult] = useState<{ err?: string; processed?: number; flagged?: number; total?: number } | null>(null);
   const [historyPage, setHistoryPage] = useState(1);
+  const [disconnecting, setDisconnecting] = useState<string | null>(null);
   const saleTimer = useRef<NodeJS.Timeout | null>(null);
   const qc = useQueryClient();
+
+  const { data: posConnections = [] } = usePOSConnections();
+  const disconnectPOS = useDisconnectPOS();
+  const initiatePOSOAuth = useInitiatePOSOAuth();
 
   // Always-current refs to avoid stale closures in async sale recording
   const ingredientsRef = useRef(ingredients);
@@ -70,6 +75,23 @@ export const SalesTab = ({ sales, recipes, flaggedSales, fefo, ingredients, lots
   useEffect(() => { lotsRef.current = lots; }, [lots]);
   useEffect(() => { fefoRef.current = fefo; }, [fefo]);
 
+  // Check for ?pos_connected= or ?pos_error= in URL after OAuth redirect
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const connected = params.get('pos_connected');
+    const error = params.get('pos_error');
+    if (connected) {
+      toast.success(`${connected.charAt(0).toUpperCase() + connected.slice(1)} connected successfully!`);
+      qc.invalidateQueries({ queryKey: ['pos_connections'] });
+      window.history.replaceState({}, '', window.location.pathname);
+      setSubTab('pos');
+    } else if (error) {
+      toast.error(`POS connection failed: ${error.replace(/_/g, ' ')}`);
+      window.history.replaceState({}, '', window.location.pathname);
+      setSubTab('pos');
+    }
+  }, [qc]);
+
   const itemPopularity = (() => {
     const counts: Record<string, number> = {};
     sales.filter(s => s.status === 'processed').forEach(s => { counts[s.item] = (counts[s.item] || 0) + s.qty; });
@@ -77,7 +99,6 @@ export const SalesTab = ({ sales, recipes, flaggedSales, fefo, ingredients, lots
   })();
 
   const deductInventory = useCallback(async (recipe: RecipeWithIngredients, saleQty: number) => {
-    // Use refs so rapid back-to-back sales always see the latest stock levels
     const currentIngredients = ingredientsRef.current;
     const currentLots = lotsRef.current;
     const currentFefo = fefoRef.current;
@@ -94,11 +115,9 @@ export const SalesTab = ({ sales, recipes, flaggedSales, fefo, ingredients, lots
         deductQty = converted;
       }
 
-      // Deduct from ingredient stock
       const newStock = Math.max(0, ing.current_stock - deductQty);
       await supabase.from('ingredients').update({ current_stock: newStock }).eq('id', ing.id);
 
-      // Deplete lots (FIFO or FEFO)
       let remaining = deductQty;
       const ingLots = currentLots
         .filter(l => l.ingredient_id === ing.id && l.quantity_remaining > 0)
@@ -136,7 +155,6 @@ export const SalesTab = ({ sales, recipes, flaggedSales, fefo, ingredients, lots
     const { error } = await supabase.from('sales').insert({ item: itemName, qty, status, reason, source, user_id: user.id });
     if (error) { toast.error('Failed to record sale'); return { status: 'error', reason: error.message }; }
 
-    // Deduct inventory for processed sales
     if (status === 'processed' && recipe) {
       await deductInventory(recipe, qty);
     }
@@ -167,6 +185,26 @@ export const SalesTab = ({ sales, recipes, flaggedSales, fefo, ingredients, lots
     toast.success(`CSV: ${p} processed, ${f} flagged`);
   };
 
+  const handleDisconnect = async (posType: string) => {
+    setDisconnecting(posType);
+    try {
+      await disconnectPOS.mutateAsync(posType);
+      toast.success(`${posType.charAt(0).toUpperCase() + posType.slice(1)} disconnected`);
+    } catch {
+      toast.error('Failed to disconnect');
+    } finally {
+      setDisconnecting(null);
+    }
+  };
+
+  const handleConnect = (posType: 'square' | 'clover' | 'toast' | 'lightspeed') => {
+    initiatePOSOAuth.mutate(posType, {
+      onError: (err) => toast.error(`Could not start OAuth: ${err.message}`),
+    });
+  };
+
+  const connectedCount = posConnections.filter(c => c.status === 'connected').length;
+
   return (
     <div className="animate-fade-up">
       <SectionHead title="Sales" sub="Record sales, import CSV, or sync your POS" />
@@ -181,8 +219,10 @@ export const SalesTab = ({ sales, recipes, flaggedSales, fefo, ingredients, lots
           {flaggedSales.length > 0 && <StatusTag variant="yellow">{flaggedSales.length} flagged</StatusTag>}
         </button>
         <button onClick={() => setSubTab('pos')} className={`pb-2 text-[13px] font-semibold border-b-2 transition-colors flex items-center gap-1.5 ${subTab === 'pos' ? 'text-primary border-primary' : 'text-muted-foreground border-transparent hover:text-foreground'}`}>
-          POS Integration
-          <StatusTag variant="slate">Coming soon</StatusTag>
+          POS
+          {connectedCount > 0
+            ? <StatusTag variant="green">{connectedCount} connected</StatusTag>
+            : <StatusTag variant="slate">Not connected</StatusTag>}
         </button>
       </div>
 
@@ -336,39 +376,117 @@ export const SalesTab = ({ sales, recipes, flaggedSales, fefo, ingredients, lots
 
       {/* POS INTEGRATION */}
       {subTab === 'pos' && (
-        <div>
-          <div className="bg-card border border-dashed border-muted-foreground/30 rounded-lg p-8 text-center mb-3.5">
-            <div className="text-4xl mb-2.5">🔌</div>
-            <div className="font-bold text-base mb-1">POS integrations coming soon</div>
-            <div className="text-[13px] text-muted-foreground mb-4 max-w-sm mx-auto">
-              Direct sync with Square, Toast, Clover, Lightspeed, and Revel is on the roadmap.
-              In the meantime, record sales manually or import via CSV.
-            </div>
-            <div className="flex justify-center gap-2 flex-wrap">
-              {POS_SYSTEMS.map(pos => (
-                <div
-                  key={pos.id}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border text-[12px] font-semibold text-muted-foreground"
-                  style={{ borderColor: pos.color + '55', color: pos.color }}
-                >
-                  {pos.name}
-                </div>
-              ))}
+        <div className="space-y-3.5">
+          <div className="bg-card border border-border rounded-lg p-4">
+            <div className="font-bold text-sm mb-1">Connect your POS system</div>
+            <p className="text-xs text-muted-foreground mb-4">
+              When connected, sales flow in automatically and inventory is deducted in real time.
+              You'll need a live account with the provider and app credentials set in your Supabase environment.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {POS_SYSTEMS.map(pos => {
+                const conn = posConnections.find(c => c.pos_type === pos.id);
+                const isConnected = conn?.status === 'connected';
+                const isError = conn?.status === 'error';
+                const lastSync = conn?.last_sync_at
+                  ? new Date(conn.last_sync_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+                  : null;
+
+                return (
+                  <div
+                    key={pos.id}
+                    className={`flex items-start gap-3 p-3.5 rounded-lg border transition-colors ${
+                      isConnected
+                        ? 'border-emerald-200 bg-emerald-50/50 dark:bg-emerald-950/20 dark:border-emerald-800'
+                        : isError
+                          ? 'border-red-200 bg-red-50/50 dark:bg-red-950/20'
+                          : 'border-border bg-muted/30'
+                    }`}
+                  >
+                    {/* Color dot */}
+                    <div
+                      className="w-8 h-8 rounded-lg flex-shrink-0 flex items-center justify-center text-white font-bold text-[11px] mt-0.5"
+                      style={{ background: pos.color }}
+                    >
+                      {pos.name.slice(0, 2).toUpperCase()}
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <span className="font-semibold text-[13px]">{pos.name}</span>
+                        {isConnected && <StatusTag variant="green">Connected</StatusTag>}
+                        {isError && <StatusTag variant="red">Error</StatusTag>}
+                      </div>
+                      <div className="text-[11px] text-muted-foreground mb-2">{pos.desc}</div>
+
+                      {isConnected && conn?.merchant_id && (
+                        <div className="text-[11px] text-muted-foreground mb-1.5">
+                          Merchant: <Mono>{conn.merchant_id}</Mono>
+                        </div>
+                      )}
+                      {isConnected && lastSync && (
+                        <div className="text-[11px] text-muted-foreground mb-2">
+                          Last sync: {lastSync}
+                        </div>
+                      )}
+                      {isError && conn?.error_message && (
+                        <div className="text-[11px] text-red-600 mb-2">{conn.error_message}</div>
+                      )}
+
+                      {isConnected ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-[12px] h-7 text-red-600 hover:text-red-700 hover:border-red-300"
+                          disabled={disconnecting === pos.id}
+                          onClick={() => handleDisconnect(pos.id)}
+                        >
+                          {disconnecting === pos.id ? 'Disconnecting…' : 'Disconnect'}
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          className="text-[12px] h-7"
+                          style={{ background: pos.color, color: pos.color === '#FFC72C' ? '#333' : 'white' }}
+                          disabled={initiatePOSOAuth.isPending}
+                          onClick={() => handleConnect(pos.id)}
+                        >
+                          Connect {pos.name}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
+          {/* Webhook setup info */}
           <div className="bg-card border border-border rounded-lg p-4">
-            <div className="font-semibold text-[13px] mb-1.5">Manual API / Webhook</div>
+            <div className="font-semibold text-[13px] mb-1.5 flex items-center gap-2">
+              🔗 Webhook endpoint
+              <StatusTag variant="slate">For your POS dashboard</StatusTag>
+            </div>
+            <p className="text-xs text-muted-foreground mb-2.5">
+              After connecting, configure your POS to send sale events to this URL so inventory updates in real time:
+            </p>
+            <div className="bg-muted/50 rounded-lg p-2.5 border border-border/50 font-mono text-[11px] break-all">
+              {import.meta.env.VITE_SUPABASE_URL}/functions/v1/pos-webhook?provider=<span className="text-primary">square</span>
+            </div>
+            <div className="mt-1.5 text-[11px] text-muted-foreground">
+              Replace <Mono>square</Mono> with the provider name. See Supabase Edge Function logs for webhook delivery status.
+            </div>
+          </div>
+
+          {/* Manual API note */}
+          <div className="bg-card border border-border rounded-lg p-4">
+            <div className="font-semibold text-[13px] mb-1.5">Custom / manual push</div>
             <div className="text-xs text-muted-foreground mb-2">
-              If you have a custom POS or ordering system, point it to your Supabase endpoint to push sales automatically.
+              If you use a custom ordering system, insert directly into the <Mono>sales</Mono> table:
             </div>
-            <div className="flex gap-2 items-center bg-muted/50 rounded-lg p-2.5 border border-border/50">
-              <code className="flex-1 text-[11px] font-mono text-foreground truncate">
-                supabase.from('sales').insert(&#123; item, qty, source, user_id &#125;)
-              </code>
-            </div>
-            <div className="mt-2 text-[11px] text-muted-foreground">
-              See the Supabase dashboard for your project URL and anon key.
+            <div className="bg-muted/50 rounded-lg p-2.5 border border-border/50 font-mono text-[11px]">
+              supabase.from('sales').insert(&#123; item, qty, source, user_id &#125;)
             </div>
           </div>
         </div>

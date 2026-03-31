@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { toast } from 'sonner';
 import { useDeleteIngredient, useCreateIngredient } from '@/hooks/use-inventory-data';
 import type { TabId } from '@/lib/types';
+import { InvoiceSetup } from './InvoiceSetup';
 
 type Ingredient = Database['public']['Tables']['ingredients']['Row'];
 type Lot = Database['public']['Tables']['lots']['Row'];
@@ -38,7 +39,7 @@ export const InventoryTab = ({
   ingredients, lots, forecasts, fefo, expiredLots, lowItems, logWaste,
   onUpdateIngredients, setTab, vendors = [],
 }: InventoryTabProps) => {
-  const [subTab, setSubTab] = useState<'list' | 'count'>('list');
+  const [subTab, setSubTab] = useState<'list' | 'count' | 'setup'>('list');
   const [lotsModal, setLotsModal] = useState<Ingredient | null>(null);
   const [cycleItems, setCycleItems] = useState<any[] | null>(null);
   const [cycleSubmitted, setCycleSubmitted] = useState(false);
@@ -155,6 +156,13 @@ export const InventoryTab = ({
         >
           Daily Count
           {cycleSubmitted && <StatusTag variant="green">Done ✓</StatusTag>}
+        </button>
+        <button
+          onClick={() => setSubTab('setup')}
+          className={`pb-2 text-[13px] font-semibold border-b-2 transition-colors flex items-center gap-1.5 ${subTab === 'setup' ? 'text-primary border-primary' : 'text-muted-foreground border-transparent hover:text-foreground'}`}
+        >
+          Invoice Setup
+          <StatusTag variant="blue">AI</StatusTag>
         </button>
       </div>
 
@@ -398,6 +406,9 @@ export const InventoryTab = ({
       )}
 
       {/* Lots Modal */}
+      {/* INVOICE SETUP */}
+      {subTab === 'setup' && <InvoiceSetup />}
+
       {lotsModal && (
         <LotsModal
           ingredient={lotsModal}
