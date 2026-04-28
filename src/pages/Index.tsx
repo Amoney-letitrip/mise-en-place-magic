@@ -101,7 +101,7 @@ const Index = () => {
   }
 
   return (
-    <div className={`min-h-screen bg-background ${isMobile ? 'pb-[70px]' : ''}`}>
+    <div className={`min-h-screen bg-background ${isMobile ? 'pb-nav-safe' : ''}`}>
       <AppNav
         tab={state.tab}
         setTab={state.setTab}

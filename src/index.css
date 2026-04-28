@@ -136,3 +136,8 @@
 .safe-bottom {
   padding-bottom: env(safe-area-inset-bottom, 0);
 }
+
+/* Clears the fixed 60px bottom nav + iPhone home-indicator gap */
+.pb-nav-safe {
+  padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px));
+}

@@ -16,6 +16,7 @@ import { StatusTag, Mono, SectionHead } from './StatusTag';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useCreateIngredient, useCreateLot } from '@/hooks/use-inventory-data';
+import { useQueryClient } from '@tanstack/react-query';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
@@ -69,6 +70,7 @@ export const InvoiceSetup = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const createIngredient = useCreateIngredient();
   const createLot = useCreateLot();
+  const qc = useQueryClient();
 
   const addFiles = useCallback((incoming: File[]) => {
     const MAX_FILE_SIZE_MB = 8;
@@ -174,8 +176,35 @@ export const InvoiceSetup = () => {
     let imported = 0;
     let failed = 0;
 
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      toast.error('Not authenticated');
+      setImporting(false);
+      return;
+    }
+
+    const ensureVendor = async (vendorName: string) => {
+      const name = vendorName.trim();
+      if (!name) return;
+
+      const { data: existing } = await supabase
+        .from('vendors')
+        .select('id')
+        .eq('user_id', user.id)
+        .ilike('name', name)
+        .maybeSingle();
+      if (existing) return;
+
+      await supabase
+        .from('vendors')
+        .insert({ name, user_id: user.id, lead_time_days: 2 });
+    };
+
     for (const row of selected) {
+      let createdIngredientId: string | null = null;
       try {
+        await ensureVendor(row.vendor_name);
+
         const ingredient = await createIngredient.mutateAsync({
           name: row.name,
           unit: row.unit,
@@ -188,7 +217,8 @@ export const InvoiceSetup = () => {
           shelf_life_days: row.is_perishable && row.shelf_life_days ? parseInt(row.shelf_life_days) : null,
           storage_type: row.storage_type,
           calib_factor: 1,
-        } as any);
+        });
+        createdIngredientId = ingredient?.id ?? null;
 
         // Create an initial lot for the purchase
         if (ingredient?.id && row.quantity > 0) {
@@ -201,22 +231,29 @@ export const InvoiceSetup = () => {
             quantity_received: row.quantity,
             quantity_remaining: row.quantity,
             cost_per_unit: row.cost_per_unit,
+            lot_label: `${row.vendor_name || 'Invoice'}-${row.name}`.replace(/\s+/g, '-'),
             received_at: row.purchase_date
               ? new Date(row.purchase_date).toISOString()
               : new Date().toISOString(),
             expires_at: expiresAt,
             vendor: row.vendor_name || null,
             notes: row.notes || null,
-          } as any);
+            source: 'Invoice import',
+          });
         }
 
         imported++;
-      } catch {
+      } catch (e) {
+        if (createdIngredientId) {
+          await supabase.from('ingredients').delete().eq('id', createdIngredientId);
+        }
+        console.error('Invoice row import failed:', e);
         failed++;
       }
     }
 
     setImporting(false);
+    qc.invalidateQueries({ queryKey: ['vendors'] });
 
     if (imported > 0) {
       toast.success(`Imported ${imported} ingredient${imported !== 1 ? 's' : ''}${failed ? ` · ${failed} failed` : ''}`);

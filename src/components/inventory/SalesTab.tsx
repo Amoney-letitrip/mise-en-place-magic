@@ -5,7 +5,6 @@ import type { Database } from '@/integrations/supabase/types';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
-import { convertUnit } from '@/lib/inventory-utils';
 import { usePOSConnections, useDisconnectPOS, useInitiatePOSOAuth } from '@/hooks/use-inventory-data';
 
 type Sale = Database['public']['Tables']['sales']['Row'];
@@ -52,7 +51,7 @@ interface SalesTabProps {
   lots: Lot[];
 }
 
-export const SalesTab = ({ sales, recipes, flaggedSales, fefo, ingredients, lots }: SalesTabProps) => {
+export const SalesTab = ({ sales, recipes, flaggedSales, fefo }: SalesTabProps) => {
   const [subTab, setSubTab] = useState<'record' | 'history' | 'pos'>('record');
   const [saleForm, setSaleForm] = useState({ item: '', qty: '1' });
   const [saleResult, setSaleResult] = useState<{ status: string; reason?: string | null } | null>(null);
@@ -66,14 +65,6 @@ export const SalesTab = ({ sales, recipes, flaggedSales, fefo, ingredients, lots
   const { data: posConnections = [] } = usePOSConnections();
   const disconnectPOS = useDisconnectPOS();
   const initiatePOSOAuth = useInitiatePOSOAuth();
-
-  // Always-current refs to avoid stale closures in async sale recording
-  const ingredientsRef = useRef(ingredients);
-  const lotsRef = useRef(lots);
-  const fefoRef = useRef(fefo);
-  useEffect(() => { ingredientsRef.current = ingredients; }, [ingredients]);
-  useEffect(() => { lotsRef.current = lots; }, [lots]);
-  useEffect(() => { fefoRef.current = fefo; }, [fefo]);
 
   // Check for ?pos_connected= or ?pos_error= in URL after OAuth redirect
   useEffect(() => {
@@ -98,70 +89,25 @@ export const SalesTab = ({ sales, recipes, flaggedSales, fefo, ingredients, lots
     return Object.entries(counts).sort((a, b) => b[1] - a[1]);
   })();
 
-  const deductInventory = useCallback(async (recipe: RecipeWithIngredients, saleQty: number) => {
-    const currentIngredients = ingredientsRef.current;
-    const currentLots = lotsRef.current;
-    const currentFefo = fefoRef.current;
+  const recordSale = useCallback(async (itemName: string, qty: number, source = 'Manual') => {
+    const { data, error } = await supabase.rpc('record_sale_transaction', {
+      p_item: itemName,
+      p_qty: qty,
+      p_source: source,
+      p_fefo: fefo,
+    });
 
-    for (const ri of recipe.ingredients) {
-      if (!ri.ingredient_id) continue;
-      const ing = currentIngredients.find(i => i.id === ri.ingredient_id);
-      if (!ing) continue;
-
-      let deductQty = ri.qty * saleQty;
-      if (ri.unit !== ing.unit) {
-        const converted = convertUnit(deductQty, ri.unit, ing.unit);
-        if (converted === null) continue;
-        deductQty = converted;
-      }
-
-      const newStock = Math.max(0, ing.current_stock - deductQty);
-      await supabase.from('ingredients').update({ current_stock: newStock }).eq('id', ing.id);
-
-      let remaining = deductQty;
-      const ingLots = currentLots
-        .filter(l => l.ingredient_id === ing.id && l.quantity_remaining > 0)
-        .sort((a, b) =>
-          currentFefo && ing.is_perishable && a.expires_at && b.expires_at
-            ? new Date(a.expires_at).getTime() - new Date(b.expires_at).getTime()
-            : new Date(a.received_at).getTime() - new Date(b.received_at).getTime()
-        );
-
-      for (const lot of ingLots) {
-        if (remaining <= 0) break;
-        const take = Math.min(lot.quantity_remaining, remaining);
-        await supabase.from('lots').update({
-          quantity_remaining: parseFloat((lot.quantity_remaining - take).toFixed(1))
-        }).eq('id', lot.id);
-        remaining -= take;
-      }
+    if (error) {
+      toast.error('Failed to record sale');
+      return { status: 'error', reason: error.message };
     }
 
+    const result = data?.[0] ?? { status: 'error', reason: 'No sale result returned' };
+    qc.invalidateQueries({ queryKey: ['sales'] });
     qc.invalidateQueries({ queryKey: ['ingredients'] });
     qc.invalidateQueries({ queryKey: ['lots'] });
-  }, [qc]);
-
-  const recordSale = useCallback(async (itemName: string, qty: number, source = 'Manual') => {
-    const recipe = recipes.find(r => r.name.toLowerCase() === itemName.toLowerCase());
-    let status = 'flagged';
-    let reason: string | null = null;
-    if (!recipe) reason = 'Menu item not found';
-    else if (recipe.status !== 'verified') reason = 'Recipe not verified';
-    else status = 'processed';
-
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { toast.error('Not authenticated'); return { status: 'error', reason: 'Not authenticated' }; }
-
-    const { error } = await supabase.from('sales').insert({ item: itemName, qty, status, reason, source, user_id: user.id });
-    if (error) { toast.error('Failed to record sale'); return { status: 'error', reason: error.message }; }
-
-    if (status === 'processed' && recipe) {
-      await deductInventory(recipe, qty);
-    }
-
-    qc.invalidateQueries({ queryKey: ['sales'] });
-    return { status, reason };
-  }, [recipes, qc, deductInventory]);
+    return result;
+  }, [qc, fefo]);
 
   const doRecordSale = async () => {
     if (!saleForm.item.trim()) return;
@@ -170,6 +116,7 @@ export const SalesTab = ({ sales, recipes, flaggedSales, fefo, ingredients, lots
     setSaleResult(r);
     saleTimer.current = setTimeout(() => setSaleResult(null), 4000);
     if (r.status === 'processed') toast.success(`${saleForm.item} ×${saleForm.qty} recorded — inventory updated`);
+    else if (r.status === 'flagged') toast.warning(r.reason || 'Sale flagged for review');
   };
 
   const importCSV = async () => {

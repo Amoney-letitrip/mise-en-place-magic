@@ -4,10 +4,10 @@
  * Called by the POS provider after the user authorizes the app.
  * URL pattern: /functions/v1/pos-oauth-callback?code=...&state=...
  *
- * The `state` param encodes:  base64({ userId, posType, redirectTo })
+ * The `state` param is an opaque, short-lived nonce created in pos_oauth_states.
  *
  * Flow:
- *   1. Validate state, extract userId + posType
+ *   1. Validate and consume state nonce, extract userId + posType
  *   2. Exchange auth code for access_token via provider token endpoint
  *   3. Upsert into pos_connections table (encrypted at rest by Supabase)
  *   4. Redirect browser back to app with ?pos_connected=true
@@ -18,6 +18,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const APP_URL = Deno.env.get("APP_URL") || "https://mise-en-place.app";
 
 // POS provider token endpoint configs
 const TOKEN_ENDPOINTS: Record<string, {
@@ -52,37 +53,78 @@ const TOKEN_ENDPOINTS: Record<string, {
   },
 };
 
+function allowedOrigins(): Set<string> {
+  const configured = (Deno.env.get("ALLOWED_APP_ORIGINS") || "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  return new Set([
+    APP_URL,
+    "http://localhost:5173",
+    "http://localhost:8080",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:8080",
+    ...configured,
+  ].map((origin) => origin.replace(/\/$/, "")));
+}
+
+function redirectWith(origin: string, key: "pos_error" | "pos_connected", value: string): Response {
+  return Response.redirect(`${origin}/?${key}=${encodeURIComponent(value)}`, 302);
+}
+
 serve(async (req) => {
   const url = new URL(req.url);
   const code = url.searchParams.get("code");
   const stateParam = url.searchParams.get("state");
   const error = url.searchParams.get("error");
+  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  const appUrl = APP_URL.replace(/\/$/, "");
 
-  // Build the app redirect base URL from env or request origin
-  const appUrl = Deno.env.get("APP_URL") || "https://mise-en-place.app";
+  if (!stateParam) {
+    return redirectWith(appUrl, "pos_error", "missing_state");
+  }
+
+  const { data: oauthState, error: stateLookupError } = await supabase
+    .from("pos_oauth_states")
+    .select("state,user_id,pos_type,redirect_origin,expires_at,used_at")
+    .eq("state", stateParam)
+    .maybeSingle();
+
+  if (stateLookupError || !oauthState) {
+    console.error("OAuth state lookup failed:", stateLookupError);
+    return redirectWith(appUrl, "pos_error", "invalid_state");
+  }
+
+  const allowed = allowedOrigins();
+  const redirectOrigin = String(oauthState.redirect_origin || "").replace(/\/$/, "");
+  if (!allowed.has(redirectOrigin)) {
+    console.error("OAuth redirect origin is not allowed:", redirectOrigin);
+    return redirectWith(appUrl, "pos_error", "invalid_redirect");
+  }
+
+  if (oauthState.used_at) {
+    return redirectWith(redirectOrigin, "pos_error", "state_already_used");
+  }
+
+  if (new Date(oauthState.expires_at).getTime() <= Date.now()) {
+    return redirectWith(redirectOrigin, "pos_error", "state_expired");
+  }
+
+  const userId = oauthState.user_id as string;
+  const posType = oauthState.pos_type as string;
+
+  if (!userId || !posType || !TOKEN_ENDPOINTS[posType]) {
+    return redirectWith(redirectOrigin, "pos_error", "invalid_state");
+  }
 
   if (error) {
     console.error("OAuth provider returned error:", error);
-    return Response.redirect(`${appUrl}/?pos_error=${encodeURIComponent(error)}`, 302);
+    return redirectWith(redirectOrigin, "pos_error", error);
   }
 
-  if (!code || !stateParam) {
-    return Response.redirect(`${appUrl}/?pos_error=missing_params`, 302);
-  }
-
-  // Decode state: base64(JSON.stringify({ userId, posType, redirectTo? }))
-  let state: { userId: string; posType: string; redirectTo?: string };
-  try {
-    state = JSON.parse(atob(stateParam));
-  } catch {
-    return Response.redirect(`${appUrl}/?pos_error=invalid_state`, 302);
-  }
-
-  const { userId, posType } = state;
-  const redirectTo = state.redirectTo || appUrl;
-
-  if (!userId || !posType || !TOKEN_ENDPOINTS[posType]) {
-    return Response.redirect(`${redirectTo}?pos_error=invalid_state`, 302);
+  if (!code) {
+    return redirectWith(redirectOrigin, "pos_error", "missing_code");
   }
 
   const providerConfig = TOKEN_ENDPOINTS[posType];
@@ -91,10 +133,22 @@ serve(async (req) => {
 
   if (!clientId || !clientSecret) {
     console.error(`Missing env vars for ${posType}: ${providerConfig.clientIdEnv}, ${providerConfig.clientSecretEnv}`);
-    return Response.redirect(`${redirectTo}?pos_error=not_configured`, 302);
+    return redirectWith(redirectOrigin, "pos_error", "not_configured");
   }
 
   const redirectUri = `${SUPABASE_URL}/functions/v1/pos-oauth-callback`;
+
+  const { error: consumeError } = await supabase
+    .from("pos_oauth_states")
+    .update({ used_at: new Date().toISOString() })
+    .eq("state", stateParam)
+    .is("used_at", null)
+    .select("state")
+    .single();
+  if (consumeError) {
+    console.error("OAuth state consume failed:", consumeError);
+    return redirectWith(redirectOrigin, "pos_error", "invalid_state");
+  }
 
   // Exchange code for token
   let tokenData: Record<string, unknown>;
@@ -114,13 +168,13 @@ serve(async (req) => {
     if (!tokenRes.ok) {
       const body = await tokenRes.text();
       console.error(`Token exchange failed for ${posType}:`, tokenRes.status, body);
-      return Response.redirect(`${redirectTo}?pos_error=token_exchange_failed`, 302);
+      return redirectWith(redirectOrigin, "pos_error", "token_exchange_failed");
     }
 
     tokenData = await tokenRes.json();
   } catch (e) {
     console.error("Token exchange error:", e);
-    return Response.redirect(`${redirectTo}?pos_error=network_error`, 302);
+    return redirectWith(redirectOrigin, "pos_error", "network_error");
   }
 
   // Extract standardised fields from provider-specific response shapes
@@ -138,16 +192,14 @@ serve(async (req) => {
 
   if (!accessToken) {
     console.error("No access_token in response from", posType, tokenData);
-    return Response.redirect(`${redirectTo}?pos_error=no_access_token`, 302);
+    return redirectWith(redirectOrigin, "pos_error", "no_access_token");
   }
 
-  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-
-  // Verify the userId from state actually exists in auth.users (CSRF protection)
+  // Verify the userId from the state row still exists in auth.users.
   const { data: userRecord, error: userLookupError } = await supabase.auth.admin.getUserById(userId);
   if (userLookupError || !userRecord?.user) {
     console.error("State userId not found in auth.users:", userId, userLookupError);
-    return Response.redirect(`${redirectTo}?pos_error=invalid_user`, 302);
+    return redirectWith(redirectOrigin, "pos_error", "invalid_user");
   }
 
   const { error: dbError } = await supabase
@@ -167,8 +219,8 @@ serve(async (req) => {
 
   if (dbError) {
     console.error("DB upsert error:", dbError);
-    return Response.redirect(`${redirectTo}?pos_error=db_error`, 302);
+    return redirectWith(redirectOrigin, "pos_error", "db_error");
   }
 
-  return Response.redirect(`${redirectTo}?pos_connected=${posType}`, 302);
+  return redirectWith(redirectOrigin, "pos_connected", posType);
 });

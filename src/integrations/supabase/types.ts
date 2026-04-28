@@ -73,40 +73,49 @@ export type Database = {
       }
       lots: {
         Row: {
+          cost_per_unit: number
           created_at: string
           expires_at: string | null
           id: string
           ingredient_id: string
           lot_label: string
+          notes: string | null
           quantity_received: number
           quantity_remaining: number
           received_at: string
           source: string | null
           user_id: string
+          vendor: string | null
         }
         Insert: {
+          cost_per_unit?: number
           created_at?: string
           expires_at?: string | null
           id?: string
           ingredient_id: string
           lot_label?: string
+          notes?: string | null
           quantity_received?: number
           quantity_remaining?: number
           received_at?: string
           source?: string | null
           user_id: string
+          vendor?: string | null
         }
         Update: {
+          cost_per_unit?: number
           created_at?: string
           expires_at?: string | null
           id?: string
           ingredient_id?: string
           lot_label?: string
+          notes?: string | null
           quantity_received?: number
           quantity_remaining?: number
           received_at?: string
           source?: string | null
           user_id?: string
+          vendor?: string | null
         }
         Relationships: [
           {
@@ -256,6 +265,36 @@ export type Database = {
         }
         Relationships: []
       }
+      pos_oauth_states: {
+        Row: {
+          created_at: string
+          expires_at: string
+          pos_type: string
+          redirect_origin: string
+          state: string
+          used_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at: string
+          pos_type: string
+          redirect_origin: string
+          state: string
+          used_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string
+          pos_type?: string
+          redirect_origin?: string
+          state?: string
+          used_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       vendors: {
         Row: {
           created_at: string
@@ -294,7 +333,27 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      convert_recipe_qty: {
+        Args: {
+          p_qty: number
+          p_from: string
+          p_to: string
+        }
+        Returns: number
+      }
+      record_sale_transaction: {
+        Args: {
+          p_item: string
+          p_qty: number
+          p_source?: string
+          p_fefo?: boolean
+        }
+        Returns: {
+          status: string
+          reason: string | null
+          sale_id: string
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never

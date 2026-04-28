@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { useDeleteRecipe, useUpdateRecipe } from '@/hooks/use-inventory-data';
+import { getScanErrorMessage, invokeScanMenu, MENU_UPLOAD_ACCEPT, prepareMenuUpload } from '@/lib/menu-scan';
 
 type Ingredient = Database['public']['Tables']['ingredients']['Row'];
 
@@ -96,17 +97,8 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
     setShowScanUI(true);
     setMenuPreviewUrl(URL.createObjectURL(file));
     try {
-      const base64 = await new Promise<string>((res, rej) => {
-        const r = new FileReader();
-        r.onload = () => res((r.result as string).split(',')[1]);
-        r.onerror = () => rej(new Error('Read failed'));
-        r.readAsDataURL(file);
-      });
-      const mediaType = file.type || 'image/jpeg';
-      const { data: fnData, error: fnError } = await supabase.functions.invoke('scan-menu', {
-        body: { type: 'photo', base64, mediaType },
-      });
-      if (fnError) throw fnError;
+      const { base64, mediaType } = await prepareMenuUpload(file);
+      const fnData = await invokeScanMenu({ type: 'photo', base64, mediaType });
       const newRecipes = dedupeRecipes(fnData?.recipes || []);
       setScannedRecipes(newRecipes);
       setRemovedIndices(new Set());
@@ -115,7 +107,7 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
     } catch (err) {
       console.error(err);
       setMenuScanState('error');
-      toast.error('Scan failed — please try again');
+      toast.error(getScanErrorMessage(err));
     }
   }, [dedupeRecipes]);
 
@@ -124,10 +116,7 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
     setShowScanUI(true);
     setMenuPreviewUrl(null);
     try {
-      const { data: fnData, error: fnError } = await supabase.functions.invoke('scan-menu', {
-        body: { type: 'url', url },
-      });
-      if (fnError) throw fnError;
+      const fnData = await invokeScanMenu({ type: 'url', url });
       const newRecipes = dedupeRecipes(fnData?.recipes || []);
       setScannedRecipes(newRecipes);
       setRemovedIndices(new Set());
@@ -370,7 +359,7 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
 
   return (
     <div className="animate-fade-up">
-      <input ref={fileRef} type="file" accept="image/*,.pdf" className="hidden" onChange={e => { if (e.target.files?.[0]) scanMenuPhoto(e.target.files[0]); e.target.value = ''; }} />
+      <input ref={fileRef} type="file" accept={MENU_UPLOAD_ACCEPT} className="hidden" onChange={e => { if (e.target.files?.[0]) scanMenuPhoto(e.target.files[0]); e.target.value = ''; }} />
 
       {/* Bulk progress overlay */}
       {bulkProgress && (
@@ -431,10 +420,10 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
                   <div className="text-5xl mb-3.5">📸</div>
                   <div className="font-extrabold text-base text-foreground mb-2">Upload a photo or PDF</div>
                   <div className="text-[13px] text-muted-foreground mb-5 leading-relaxed">
-                    Take a photo of your printed menu, or upload a PDF
+                    Upload a JPG, PNG, WebP, or PDF. Large photos are compressed before scanning.
                   </div>
                   <Button className="w-full" onClick={e => { e.stopPropagation(); fileRef.current?.click(); }}>Choose File</Button>
-                  <div className="mt-2.5 text-[11px] text-muted-foreground">JPG, PNG, HEIC, PDF</div>
+                  <div className="mt-2.5 text-[11px] text-muted-foreground">JPG, PNG, WebP, PDF</div>
                 </div>
                 <div className="bg-accent/30 border border-dashed border-accent-foreground/20 rounded-lg p-8 text-center">
                   <div className="text-5xl mb-3.5">🔗</div>

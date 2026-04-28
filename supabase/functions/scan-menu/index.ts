@@ -6,19 +6,45 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+const SUPPORTED_MEDIA_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
+const MAX_BASE64_CHARS = 12_000_000;
+const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
+
+type GeminiPart =
+  | { type: "text"; text: string }
+  | { inline_data: { mime_type: string; data: string } };
+
+function buildFilePart(mime: string, base64: string): GeminiPart {
+  if (SUPPORTED_MEDIA_TYPES.has(mime)) {
+    return { inline_data: { mime_type: mime, data: base64 } };
+  }
+
+  throw new Error("Unsupported file type. Upload JPG, PNG, WebP, or PDF.");
+}
+
 function extractJson(response: string): unknown {
   let cleaned = response
     .replace(/```json\s*/gi, "").replace(/```\s*/g, "")
     .replace(/'''json\s*/gi, "").replace(/'''\s*/g, "")
     .trim();
-  const jsonStart = cleaned.search(/[\{\[]/);
+  const firstObject = cleaned.indexOf("{");
+  const firstArray = cleaned.indexOf("[");
+  const jsonStart = firstObject === -1 ? firstArray : firstArray === -1 ? firstObject : Math.min(firstObject, firstArray);
   if (jsonStart === -1) throw new Error("No JSON found");
   const endChar = cleaned[jsonStart] === '[' ? ']' : '}';
   const jsonEnd = cleaned.lastIndexOf(endChar);
   if (jsonEnd === -1) throw new Error("No closing bracket");
   cleaned = cleaned.substring(jsonStart, jsonEnd + 1);
   try { return JSON.parse(cleaned); } catch { /* continue */ }
-  cleaned = cleaned.replace(/,\s*}/g, "}").replace(/,\s*]/g, "]").replace(/[\x00-\x1F\x7F]/g, " ");
+  cleaned = cleaned
+    .replace(/,\s*}/g, "}")
+    .replace(/,\s*]/g, "]")
+    .split("")
+    .map((c) => {
+      const code = c.charCodeAt(0);
+      return code < 32 || code === 127 ? " " : c;
+    })
+    .join("");
   try { return JSON.parse(cleaned); } catch { /* continue */ }
   let braces = 0, brackets = 0;
   for (const c of cleaned) {
@@ -38,31 +64,40 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
 
   try {
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY not configured");
+    const geminiModel = Deno.env.get("GEMINI_MODEL") || DEFAULT_GEMINI_MODEL;
 
     const { type, base64, mediaType, url } = await req.json();
 
-    let userContent: any[];
+    let userParts: GeminiPart[];
 
     const extractionPrompt = `Extract every dish/menu item from this menu. For each dish, estimate the ingredients and quantities needed for one serving. Return JSON only.`;
 
     if (type === "photo" && base64) {
       const mime = mediaType || "image/jpeg";
+      if (!SUPPORTED_MEDIA_TYPES.has(mime)) {
+        return new Response(
+          JSON.stringify({ error: "Unsupported file type. Upload JPG, PNG, WebP, or PDF." }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      if (typeof base64 !== "string" || base64.length > MAX_BASE64_CHARS) {
+        return new Response(
+          JSON.stringify({ error: "File is too large to scan. Upload a smaller image or PDF." }),
+          { status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
       
-      // For PDFs, we send as application/pdf which Gemini supports natively
-      userContent = [
-        {
-          type: "image_url",
-          image_url: { url: `data:${mime};base64,${base64}` },
-        },
+      userParts = [
+        buildFilePart(mime, base64),
         {
           type: "text",
           text: extractionPrompt,
         },
       ];
     } else if (type === "url" && url) {
-      userContent = [
+      userParts = [
         {
           type: "text",
           text: `I have a restaurant menu at this URL: ${url}\n\nPlease visit this URL and analyze the menu. ${extractionPrompt}`,
@@ -99,19 +134,27 @@ Rules:
 - Return ONLY the JSON, no markdown fences or explanation`;
 
     const response = await fetch(
-      "https://ai.gateway.lovable.dev/v1/chat/completions",
+      `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent`,
       {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          "x-goog-api-key": GEMINI_API_KEY,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "google/gemini-2.5-flash",
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userContent },
+          system_instruction: {
+            parts: [{ text: systemPrompt }],
+          },
+          contents: [
+            {
+              role: "user",
+              parts: userParts.map((part) => "type" in part ? { text: part.text } : part),
+            },
           ],
+          generationConfig: {
+            temperature: 0.2,
+            response_mime_type: "application/json",
+          },
         }),
       }
     );
@@ -123,19 +166,26 @@ Rules:
           { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-      if (response.status === 402) {
+      if (response.status === 400 || response.status === 401 || response.status === 403) {
         return new Response(
-          JSON.stringify({ error: "AI credits exhausted. Please add credits in workspace settings." }),
-          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          JSON.stringify({ error: "Gemini API access is not configured correctly. Check the Gemini API key in Supabase secrets." }),
+          { status: response.status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
       const t = await response.text();
-      console.error("AI gateway error:", response.status, t);
-      throw new Error(`AI gateway returned ${response.status}`);
+      console.error("Gemini API error:", response.status, t);
+      return new Response(
+        JSON.stringify({ error: `Menu scan service returned ${response.status}. Try a clearer or smaller image.` }),
+        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     const data = await response.json();
-    const raw = data.choices?.[0]?.message?.content || "";
+    const raw = Array.isArray(data.candidates?.[0]?.content?.parts)
+      ? data.candidates[0].content.parts
+          .map((part: { text?: string }) => part.text || "")
+          .join("\n")
+      : "";
 
     // Robust JSON extraction and repair
     let parsed: { recipes: any[] };

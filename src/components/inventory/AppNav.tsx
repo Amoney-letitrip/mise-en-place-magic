@@ -1,6 +1,7 @@
 import type { TabId } from '@/lib/types';
 import { useAuth } from '@/hooks/use-auth';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { WipeDataDialog } from './WipeDataDialog';
 
 interface NavItem {
   id: TabId;
@@ -64,13 +65,14 @@ export const AppNav = ({ tab, setTab, fefo, setFefo, navItems, restaurantName }:
 
         {/* Right side */}
         <div className="flex items-center gap-2 ml-2 flex-shrink-0">
-          <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
-            <input type="checkbox" checked={fefo} onChange={e => setFefo(e.target.checked)} className="accent-primary" />
+          {!isMobile && <WipeDataDialog />}
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none min-h-[44px] px-1">
+            <input type="checkbox" checked={fefo} onChange={e => setFefo(e.target.checked)} className="accent-primary w-4 h-4" />
             FEFO
           </label>
           <button
             onClick={signOut}
-            className="w-[30px] h-[30px] bg-primary rounded-full flex items-center justify-center font-bold text-xs text-primary-foreground hover:opacity-80 transition-opacity"
+            className="w-[44px] h-[44px] bg-primary rounded-full flex items-center justify-center font-bold text-xs text-primary-foreground hover:opacity-80 transition-opacity"
             title={`Sign out (${user?.email || 'account'})`}
             aria-label="Sign out"
           >

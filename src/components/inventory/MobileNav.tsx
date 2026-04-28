@@ -25,26 +25,29 @@ const ICONS: Record<TabId, string> = {
 
 export const MobileNav = ({ tab, setTab, navItems }: MobileNavProps) => (
   <nav className="fixed bottom-0 left-0 right-0 z-50 bg-card/95 backdrop-blur-md border-t border-border shadow-[0_-2px_10px_rgba(0,0,0,0.06)] md:hidden">
-    <div className="flex justify-around items-center h-[60px] px-1 safe-bottom">
+    {/* Fixed 60 px button row */}
+    <div className="flex justify-around items-center h-[60px] px-1">
       {navItems.map(n => (
         <button
           key={n.id}
           onClick={() => setTab(n.id)}
-          className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg transition-colors relative min-w-[48px] ${
+          className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg transition-colors relative min-w-[44px] min-h-[44px] justify-center ${
             tab === n.id
               ? 'text-primary'
               : 'text-muted-foreground'
           }`}
         >
-          <span className="text-lg leading-none">{ICONS[n.id]}</span>
-          <span className="text-[10px] font-semibold leading-none">{n.label}</span>
+          <span className="text-xl leading-none">{ICONS[n.id]}</span>
+          <span className="text-[11px] font-semibold leading-none mt-0.5">{n.label}</span>
           {n.badge ? (
-            <span className="absolute -top-0.5 right-0 min-w-[14px] h-[14px] rounded-full text-[9px] font-bold inline-flex items-center justify-center px-0.5 bg-destructive text-destructive-foreground">
+            <span className="absolute -top-0.5 right-0 min-w-[16px] h-[16px] rounded-full text-[10px] font-bold inline-flex items-center justify-center px-0.5 bg-destructive text-destructive-foreground">
               {n.badge}
             </span>
           ) : null}
         </button>
       ))}
     </div>
+    {/* Safe-area spacer — expands for iPhone home indicator without squishing buttons */}
+    <div className="safe-bottom" />
   </nav>
 );

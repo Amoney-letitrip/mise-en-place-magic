@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { useDeleteIngredient, useCreateIngredient } from '@/hooks/use-inventory-data';
 import type { TabId } from '@/lib/types';
 import { InvoiceSetup } from './InvoiceSetup';
+import { WipeDataDialog } from './WipeDataDialog';
 
 type Ingredient = Database['public']['Tables']['ingredients']['Row'];
 type Lot = Database['public']['Tables']['lots']['Row'];
@@ -133,10 +134,11 @@ export const InventoryTab = ({
         title="Inventory"
         sub={`${ingredients.length} ingredients · ${lowItems.length} low · ${fefo ? 'FEFO' : 'FIFO'}`}
         action={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {subTab === 'list' && !cycleSubmitted && (
               <Button variant="outline" onClick={startCount}>🔢 Daily Count</Button>
             )}
+            <WipeDataDialog />
             <Button onClick={() => { setIngForm(EMPTY_ING_FORM); setShowAddIng(true); }}>+ Add Ingredient</Button>
           </div>
         }
@@ -191,7 +193,85 @@ export const InventoryTab = ({
             </div>
           )}
 
-          <div className="bg-card border border-border rounded-lg overflow-hidden">
+          {/* ── Mobile: ingredient cards (no horizontal scrolling) ── */}
+          <div className="md:hidden space-y-2">
+            {ingredients.map(ing => {
+              const fc = forecasts[ing.id];
+              const iLots = ingLots(ing.id);
+              const worstLot = iLots.find(l => l.expires_at && diffDays(new Date(l.expires_at), now) <= 2);
+              const expLot = iLots.find(l => l.expires_at && diffDays(new Date(l.expires_at), now) < 0);
+              const isLow = ing.current_stock <= ing.threshold;
+              return (
+                <div key={ing.id} className={`bg-card border rounded-lg p-3.5 ${isLow ? 'border-red-200 bg-red-50/20' : 'border-border'}`}>
+                  {/* Name + storage badge */}
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="font-semibold text-[15px] text-foreground leading-tight">{ing.name}</span>
+                      {ing.is_perishable && <span className="flex-shrink-0 text-sm">🌿</span>}
+                    </div>
+                    <StatusTag variant={ing.storage_type === 'fridge' ? 'blue' : ing.storage_type === 'freezer' ? 'purple' : 'gray'}>
+                      {ing.storage_type === 'fridge' ? '❄️ Fridge' : ing.storage_type === 'freezer' ? '🧊 Freezer' : '🏠 Room'}
+                    </StatusTag>
+                  </div>
+                  {/* Stock level */}
+                  <div className="mb-2.5">
+                    <div className="flex items-center justify-between mb-1">
+                      <Mono className={isLow ? 'text-destructive font-semibold' : ''}>{fmtN(ing.current_stock)} {ing.unit}</Mono>
+                      <span className="text-[11px] text-muted-foreground">min {fmtN(ing.threshold)}</span>
+                    </div>
+                    <StockBar current={ing.current_stock} threshold={ing.threshold} />
+                  </div>
+                  {/* Status badges */}
+                  <div className="flex flex-wrap gap-1.5 mb-3">
+                    {isLow && <StatusTag variant="red">⚠ Low stock</StatusTag>}
+                    {ing.is_perishable && (
+                      expLot
+                        ? <StatusTag variant="red">Lot expired</StatusTag>
+                        : worstLot
+                          ? <FreshBadge expiresAt={worstLot.expires_at} />
+                          : iLots.length > 0
+                            ? <StatusTag variant="green">Fresh ✓</StatusTag>
+                            : null
+                    )}
+                    {fc && fc.daysLeft !== Infinity && (
+                      <StatusTag variant={fc.daysLeft <= 2 ? 'red' : fc.daysLeft <= 5 ? 'yellow' : 'green'}>
+                        {Math.round(fc.daysLeft)}d left
+                      </StatusTag>
+                    )}
+                    <span className={`inline-flex items-center font-mono text-[11px] font-bold px-2 py-0.5 rounded-md ${
+                      ing.calib_factor > 1.1 ? 'text-red-600 bg-red-50' :
+                      ing.calib_factor < 0.9 ? 'text-amber-600 bg-amber-50' :
+                      'text-green-600 bg-green-50'
+                    }`}>{ing.calib_factor.toFixed(2)}× calib</span>
+                  </div>
+                  {/* Actions */}
+                  <div className="flex items-center gap-2 pt-2.5 border-t border-border/40">
+                    {iLots.length > 0 && (
+                      <button
+                        onClick={() => setLotsModal(ing)}
+                        className="text-[12px] font-medium text-foreground border border-border rounded-md px-2.5 py-1.5 hover:bg-muted transition-colors"
+                      >
+                        {iLots.length} lot{iLots.length !== 1 ? 's' : ''}
+                      </button>
+                    )}
+                    {ing.vendor && (
+                      <Button variant="outline" size="sm" onClick={() => setTab?.('orders')}>Reorder</Button>
+                    )}
+                    <button
+                      onClick={() => setDeleteTarget(ing)}
+                      className="ml-auto text-muted-foreground/40 hover:text-destructive transition-colors p-2"
+                      title="Delete ingredient"
+                    >
+                      🗑
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* ── Desktop: table (hidden on mobile) ── */}
+          <div className="hidden md:block bg-card border border-border rounded-lg overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-[13px]">
                 <thead>
@@ -293,7 +373,87 @@ export const InventoryTab = ({
 
       {/* DAILY COUNT */}
       {subTab === 'count' && (
-        <div className="flex flex-col lg:grid lg:grid-cols-[1fr_300px] gap-3.5">
+        <>
+        {/* ── Mobile: count cards ── */}
+        <div className="md:hidden space-y-3">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[13px] text-muted-foreground">Exception items flagged for counting</span>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={startCount}>↻</Button>
+              {!cycleSubmitted && (
+                <Button size="sm" disabled={computedCycle.every(i => i.counted === null)} onClick={submitCount}>
+                  Submit
+                </Button>
+              )}
+            </div>
+          </div>
+          {cycleSubmitted && (
+            <div className="px-3.5 py-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-[13px] text-emerald-700">
+              ✓ Count submitted — inventory reconciled
+            </div>
+          )}
+          {computedCycle.map((item, idx) => {
+            const diff = item.counted != null && item.counted !== ''
+              ? parseFloat(String(fmtN(parseFloat(item.counted) - item.systemQty)))
+              : null;
+            const hasDiff = diff !== null && diff !== 0;
+            return (
+              <div key={item.id} className={`bg-card border rounded-lg p-3.5 ${hasDiff ? 'border-amber-300 bg-amber-50/30' : 'border-border'}`}>
+                {/* Name + flags */}
+                <div className="flex items-start justify-between gap-2 mb-3">
+                  <span className="font-semibold text-[15px]">{item.name}</span>
+                  <div className="flex flex-wrap gap-1 justify-end">
+                    {(item.tags || []).map((t: string) => (
+                      <StatusTag key={t} variant={t === 'low-stock' ? 'red' : t === 'expiring' ? 'orange' : t === 'variance' ? 'yellow' : 'slate'}>
+                        {t === 'low-stock' ? 'Low' : t === 'expiring' ? 'Expiring' : t === 'variance' ? 'Variance' : '$'}
+                      </StatusTag>
+                    ))}
+                  </div>
+                </div>
+                {/* System qty ↔ count input */}
+                <div className="flex items-center gap-3">
+                  <div className="flex-1">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">System</div>
+                    <Mono className="text-base">{fmtN(item.systemQty)}<span className="text-muted-foreground text-xs ml-1">{item.unit}</span></Mono>
+                  </div>
+                  <span className="text-muted-foreground/40 text-lg">→</span>
+                  <div className="flex-1">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">Your count</div>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      className={`w-full text-right px-3 py-2 border rounded-md text-base bg-card focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary ${hasDiff ? 'border-warning' : 'border-border'}`}
+                      placeholder="—"
+                      disabled={cycleSubmitted}
+                      value={item.counted ?? ''}
+                      onChange={e => setCycleItems(prev => (prev || computedCycle).map((it, i) => i === idx ? { ...it, counted: e.target.value === '' ? null : e.target.value } : it))}
+                    />
+                  </div>
+                </div>
+                {/* Delta + reason */}
+                {hasDiff && (
+                  <div className="mt-3 pt-3 border-t border-border/40 flex items-center gap-3">
+                    <Mono className={`font-bold text-base ${diff! > 0 ? 'text-green-600' : 'text-destructive'}`}>
+                      {diff! > 0 ? '+' : ''}{diff} {item.unit}
+                    </Mono>
+                    <select
+                      className="flex-1 text-sm border border-border rounded-md px-2 py-2 bg-card"
+                      value={item.reason || ''}
+                      disabled={cycleSubmitted}
+                      onChange={e => setCycleItems(prev => (prev || computedCycle).map((it, i) => i === idx ? { ...it, reason: e.target.value } : it))}
+                    >
+                      <option value="">Select reason…</option>
+                      {DISCREPANCY_REASONS.map(r => <option key={r}>{r}</option>)}
+                    </select>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* ── Desktop: table + sidebar (hidden on mobile) ── */}
+        <div className="hidden md:flex md:flex-col lg:grid lg:grid-cols-[1fr_300px] gap-3.5">
           <div className="bg-card border border-border rounded-lg overflow-hidden">
             <div className="px-3.5 py-2.5 border-b border-border bg-muted/30 flex justify-between items-center">
               <span className="text-[13px] text-muted-foreground">Exception items: low stock + high variance + expiring + high value</span>
@@ -403,6 +563,8 @@ export const InventoryTab = ({
             </div>
           </div>
         </div>
+        {/* closes hidden md:flex desktop layout */}
+        </>
       )}
 
       {/* Lots Modal */}

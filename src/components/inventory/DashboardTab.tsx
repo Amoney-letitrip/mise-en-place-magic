@@ -43,7 +43,7 @@ export const DashboardTab = ({
           onClick={() => setTab('orders')}
           className={`bg-card border rounded-lg p-4 text-left transition-colors hover:border-primary/50 ${dueOrders.length ? 'bg-blue-50/50 border-blue-200' : 'border-border'}`}
         >
-          <div className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground mb-2">📦 Orders Due</div>
+          <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">📦 Orders Due</div>
           <div className={`text-4xl font-extrabold leading-none mb-1 ${dueOrders.length ? 'text-primary' : 'text-muted-foreground/30'}`}>{dueOrders.length}</div>
           <div className="text-xs text-muted-foreground">vendor order{dueOrders.length !== 1 ? 's' : ''} due today</div>
         </button>
@@ -52,7 +52,7 @@ export const DashboardTab = ({
           onClick={() => setTab('orders')}
           className={`bg-card border rounded-lg p-4 text-left transition-colors hover:border-primary/50 ${stockoutRisk.length ? 'bg-red-50/50 border-red-200' : 'border-border'}`}
         >
-          <div className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground mb-2">⚠ Stockout Risk</div>
+          <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">⚠ Stockout Risk</div>
           <div className={`text-4xl font-extrabold leading-none mb-1 ${stockoutRisk.length ? 'text-destructive' : 'text-muted-foreground/30'}`}>{stockoutRisk.length}</div>
           <div className="text-xs text-muted-foreground">{stockoutRisk.length ? (stockoutRisk.length <= 3 ? stockoutRisk.map(i => i.name).join(', ') : `${stockoutRisk.slice(0, 3).map(i => i.name).join(', ')} +${stockoutRisk.length - 3} more`) : 'All good'}</div>
         </button>
@@ -61,7 +61,7 @@ export const DashboardTab = ({
           onClick={() => setTab('inventory')}
           className={`bg-card border rounded-lg p-4 text-left transition-colors hover:border-primary/50 ${(expiredLots.length + expiringLots.length) ? 'bg-orange-50/50 border-orange-200' : 'border-border'}`}
         >
-          <div className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground mb-2">🧊 Freshness Alerts</div>
+          <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">🧊 Freshness Alerts</div>
           <div className={`text-4xl font-extrabold leading-none mb-1 ${(expiredLots.length + expiringLots.length) ? 'text-orange' : 'text-muted-foreground/30'}`}>
             {expiredLots.length + expiringLots.length}
           </div>

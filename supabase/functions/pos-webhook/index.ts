@@ -2,8 +2,8 @@
  * POS Webhook Edge Function
  *
  * Receives real-time sale events from connected POS providers.
- * Validates the webhook signature, then creates a `sales` record
- * which triggers inventory deduction on the frontend via React Query.
+ * Validates the webhook signature, then creates flagged `sales` records
+ * for review inside the app.
  *
  * Webhook URLs to configure in each POS dashboard:
  *   Square:     https://[project-ref].supabase.co/functions/v1/pos-webhook?provider=square
@@ -11,8 +11,8 @@
  *   Toast:      https://[project-ref].supabase.co/functions/v1/pos-webhook?provider=toast
  *   Lightspeed: https://[project-ref].supabase.co/functions/v1/pos-webhook?provider=lightspeed
  *
- * Expected `sales` table columns (existing schema assumed):
- *   id, user_id, recipe_id, quantity, sale_date, notes, pos_source, pos_order_id
+ * Expected `sales` table columns:
+ *   id, user_id, item, qty, status, reason, source, created_at
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
@@ -220,15 +220,17 @@ serve(async (req) => {
     });
   }
 
-  // Insert sales records (recipe_id will be null — matched later by item name lookup)
+  // Insert sales records in the schema the frontend actually reads.
+  // POS rows are flagged because inventory deduction must happen through the
+  // same stock checks used by manual sales, not by silently trusting a webhook.
   const salesRows = lineItems.map((item) => ({
     user_id: userId,
-    recipe_id: null,          // Will be matched by the app when recipe names align
-    quantity: item.quantity,
-    sale_date: item.occurredAt.split("T")[0],
-    notes: `[POS: ${provider}] ${item.itemName} @ $${item.unitPrice.toFixed(2)}`,
-    pos_source: provider,
-    pos_order_id: item.posOrderId,
+    item: item.itemName,
+    qty: Math.max(1, Math.round(item.quantity)),
+    status: "flagged",
+    reason: `POS sync from ${provider}; review recipe match before deducting inventory`,
+    source: `POS:${provider}`,
+    created_at: item.occurredAt,
   }));
 
   const { error: insertError, count } = await supabase
@@ -236,24 +238,11 @@ serve(async (req) => {
     .insert(salesRows, { count: "exact" });
 
   if (insertError) {
-    // Columns pos_source / pos_order_id may not exist yet — insert without them
-    if (insertError.code === "42703") {
-      const fallback = salesRows.map(({ pos_source: _s, pos_order_id: _o, ...rest }) => rest);
-      const { error: fallbackError } = await supabase.from("sales").insert(fallback);
-      if (fallbackError) {
-        console.error("Fallback insert error:", fallbackError);
-        return new Response(JSON.stringify({ error: "db_insert_failed" }), {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-    } else {
-      console.error("Sales insert error:", insertError);
-      return new Response(JSON.stringify({ error: "db_insert_failed" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    console.error("Sales insert error:", insertError);
+    return new Response(JSON.stringify({ error: "db_insert_failed" }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 
   // Update last_sync_at on the connection

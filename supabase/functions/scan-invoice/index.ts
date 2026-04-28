@@ -31,12 +31,30 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version",
 };
 
+const SUPPORTED_MEDIA_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
+const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
+const MAX_BASE64_CHARS = 12_000_000;
+
+type GeminiPart =
+  | { type: "text"; text: string }
+  | { inline_data: { mime_type: string; data: string } };
+
+function buildFilePart(mediaType: string, base64: string): GeminiPart {
+  if (SUPPORTED_MEDIA_TYPES.has(mediaType)) {
+    return { inline_data: { mime_type: mediaType, data: base64 } };
+  }
+
+  throw new Error("Unsupported file type. Upload JPG, PNG, WebP, or PDF.");
+}
+
 function extractJson(response: string): unknown {
   let cleaned = response
     .replace(/```json\s*/gi, "").replace(/```\s*/g, "")
     .replace(/'''json\s*/gi, "").replace(/'''\s*/g, "")
     .trim();
-  const jsonStart = cleaned.search(/[\{\[]/);
+  const firstObject = cleaned.indexOf("{");
+  const firstArray = cleaned.indexOf("[");
+  const jsonStart = firstObject === -1 ? firstArray : firstArray === -1 ? firstObject : Math.min(firstObject, firstArray);
   if (jsonStart === -1) throw new Error("No JSON found");
   const endChar = cleaned[jsonStart] === '[' ? ']' : '}';
   const jsonEnd = cleaned.lastIndexOf(endChar);
@@ -46,7 +64,12 @@ function extractJson(response: string): unknown {
   cleaned = cleaned
     .replace(/,\s*}/g, "}")
     .replace(/,\s*]/g, "]")
-    .replace(/[\x00-\x1F\x7F]/g, " ");
+    .split("")
+    .map((c) => {
+      const code = c.charCodeAt(0);
+      return code < 32 || code === 127 ? " " : c;
+    })
+    .join("");
   try { return JSON.parse(cleaned); } catch { /* continue */ }
   let braces = 0, brackets = 0;
   for (const c of cleaned) {
@@ -97,8 +120,9 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
 
   try {
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY not configured");
+    const geminiModel = Deno.env.get("GEMINI_MODEL") || DEFAULT_GEMINI_MODEL;
 
     const { files } = await req.json() as {
       files: Array<{ base64: string; mediaType: string; filename?: string }>;
@@ -113,32 +137,51 @@ serve(async (req) => {
 
     // Cap at 10 files per request
     const fileSlice = files.slice(0, 10);
+    for (const file of fileSlice) {
+      if (!SUPPORTED_MEDIA_TYPES.has(file.mediaType)) {
+        return new Response(
+          JSON.stringify({ error: "Unsupported file type. Upload JPG, PNG, WebP, or PDF." }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      if (typeof file.base64 !== "string" || file.base64.length > MAX_BASE64_CHARS) {
+        return new Response(
+          JSON.stringify({ error: "One invoice file is too large to scan. Upload a smaller image or PDF." }),
+          { status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
 
     // Build content array with all files plus the instruction
-    const userContent: unknown[] = fileSlice.map(f => ({
-      type: "image_url",
-      image_url: { url: `data:${f.mediaType};base64,${f.base64}` },
-    }));
+    const userParts: GeminiPart[] = fileSlice.map((file) => buildFilePart(file.mediaType, file.base64));
 
-    userContent.push({
+    userParts.push({
       type: "text",
       text: `Extract all ingredient line items from ${fileSlice.length > 1 ? 'these invoices/receipts' : 'this invoice/receipt'}. Return JSON only.`,
     });
 
     const response = await fetch(
-      "https://ai.gateway.lovable.dev/v1/chat/completions",
+      `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent`,
       {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          "x-goog-api-key": GEMINI_API_KEY,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "google/gemini-2.5-flash",
-          messages: [
-            { role: "system", content: SYSTEM_PROMPT },
-            { role: "user", content: userContent },
+          system_instruction: {
+            parts: [{ text: SYSTEM_PROMPT }],
+          },
+          contents: [
+            {
+              role: "user",
+              parts: userParts.map((part) => "type" in part ? { text: part.text } : part),
+            },
           ],
+          generationConfig: {
+            temperature: 0.2,
+            response_mime_type: "application/json",
+          },
         }),
       }
     );
@@ -150,19 +193,23 @@ serve(async (req) => {
           { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-      if (response.status === 402) {
+      if (response.status === 400 || response.status === 401 || response.status === 403) {
         return new Response(
-          JSON.stringify({ error: "AI credits exhausted. Please add credits in workspace settings." }),
-          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          JSON.stringify({ error: "Gemini API access is not configured correctly. Check the Gemini API key in Supabase secrets." }),
+          { status: response.status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
       const t = await response.text();
-      console.error("AI gateway error:", response.status, t);
-      throw new Error(`AI gateway returned ${response.status}`);
+      console.error("Gemini API error:", response.status, t);
+      throw new Error(`Gemini API returned ${response.status}`);
     }
 
     const data = await response.json();
-    const raw = data.choices?.[0]?.message?.content || "";
+    const raw = Array.isArray(data.candidates?.[0]?.content?.parts)
+      ? data.candidates[0].content.parts
+          .map((part: { text?: string }) => part.text || "")
+          .join("\n")
+      : "";
 
     let parsed: { ingredients: unknown[] };
     try {

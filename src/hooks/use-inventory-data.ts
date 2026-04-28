@@ -103,6 +103,33 @@ export const useDeleteRecipe = () => {
   });
 };
 
+export const useWipeIngredientsAndRecipes = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const userId = await getUserId();
+
+      const steps = [
+        () => supabase.from('recipe_ingredients').delete().eq('user_id', userId),
+        () => supabase.from('lots').delete().eq('user_id', userId),
+        () => supabase.from('recipes').delete().eq('user_id', userId),
+        () => supabase.from('ingredients').delete().eq('user_id', userId),
+      ];
+
+      for (const step of steps) {
+        const { error } = await step();
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['ingredients'] });
+      qc.invalidateQueries({ queryKey: ['lots'] });
+      qc.invalidateQueries({ queryKey: ['recipes-with-ingredients'] });
+      qc.invalidateQueries({ queryKey: ['sales'] });
+    },
+  });
+};
+
 export const useUpdateLot = () => {
   const qc = useQueryClient();
   return useMutation({
@@ -352,15 +379,22 @@ export const useInitiatePOSOAuth = () => {
       if (!clientId) {
         throw new Error(
           `${posType.charAt(0).toUpperCase() + posType.slice(1)} client ID is not configured. ` +
-          `Add ${CLIENT_ID_KEYS[posType]} to your environment variables in Lovable → Supabase settings.`
+          `Add ${CLIENT_ID_KEYS[posType]} to your local environment variables.`
         );
       }
 
-      const state = btoa(JSON.stringify({
-        userId: user.id,
-        posType,
-        redirectTo: window.location.origin,
-      }));
+      const state = crypto.randomUUID();
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+      const { error: stateError } = await supabase
+        .from('pos_oauth_states')
+        .insert({
+          state,
+          user_id: user.id,
+          pos_type: posType,
+          redirect_origin: window.location.origin,
+          expires_at: expiresAt,
+        });
+      if (stateError) throw stateError;
 
       const OAUTH_URLS: Record<string, string> = {
         square:     `https://connect.squareup.com/oauth2/authorize?client_id=${clientId}&scope=PAYMENTS_READ+ORDERS_READ&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`,

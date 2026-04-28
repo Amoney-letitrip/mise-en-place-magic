@@ -4,6 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { useUpdateProfile } from '@/hooks/use-inventory-data';
+import { getScanErrorMessage, invokeScanMenu, MENU_UPLOAD_ACCEPT, prepareMenuUpload } from '@/lib/menu-scan';
 
 interface ScannedRecipe {
   name: string;
@@ -226,25 +227,16 @@ export const OnboardingWizard = ({ restaurantName: initialName }: OnboardingWiza
     setScanState('scanning');
     setMenuPreviewUrl(URL.createObjectURL(file));
     try {
-      const base64 = await new Promise<string>((res, rej) => {
-        const r = new FileReader();
-        r.onload = () => res((r.result as string).split(',')[1]);
-        r.onerror = () => rej(new Error('Read failed'));
-        r.readAsDataURL(file);
-      });
-      const mediaType = file.type || 'image/jpeg';
-      const { data: fnData, error: fnError } = await supabase.functions.invoke('scan-menu', {
-        body: { type: 'photo', base64, mediaType },
-      });
-      if (fnError) throw fnError;
+      const { base64, mediaType } = await prepareMenuUpload(file);
+      const fnData = await invokeScanMenu({ type: 'photo', base64, mediaType });
       const recipes = dedupeRecipes(fnData?.recipes || []);
       setScannedRecipes(recipes);
       setRemovedIndices(new Set());
       setScanState('done');
       toast.success(`Found ${recipes.length} menu items`);
-    } catch {
+    } catch (error) {
       setScanState('error');
-      toast.error('Scan failed — please try again');
+      toast.error(getScanErrorMessage(error));
     }
   }, [dedupeRecipes]);
 
@@ -252,10 +244,7 @@ export const OnboardingWizard = ({ restaurantName: initialName }: OnboardingWiza
     setScanState('scanning');
     setMenuPreviewUrl(null);
     try {
-      const { data: fnData, error: fnError } = await supabase.functions.invoke('scan-menu', {
-        body: { type: 'url', url },
-      });
-      if (fnError) throw fnError;
+      const fnData = await invokeScanMenu({ type: 'url', url });
       const recipes = dedupeRecipes(fnData?.recipes || []);
       setScannedRecipes(recipes);
       setRemovedIndices(new Set());
@@ -474,7 +463,7 @@ export const OnboardingWizard = ({ restaurantName: initialName }: OnboardingWiza
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center px-4 py-8">
-      <input ref={fileRef} type="file" accept="image/*,.pdf" className="hidden" onChange={e => { if (e.target.files?.[0]) scanMenuPhoto(e.target.files[0]); e.target.value = ''; }} />
+      <input ref={fileRef} type="file" accept={MENU_UPLOAD_ACCEPT} className="hidden" onChange={e => { if (e.target.files?.[0]) scanMenuPhoto(e.target.files[0]); e.target.value = ''; }} />
 
       <div className="w-full max-w-xl">
         {/* Progress */}
@@ -532,7 +521,7 @@ export const OnboardingWizard = ({ restaurantName: initialName }: OnboardingWiza
               >
                 <div className="text-3xl mb-2">📸</div>
                 <div className="font-bold text-sm text-foreground mb-1">Upload a photo or PDF</div>
-                <div className="text-xs text-muted-foreground">Take a photo of your printed menu, or upload a PDF</div>
+                <div className="text-xs text-muted-foreground">JPG, PNG, WebP, or PDF. Large photos are compressed before scanning.</div>
               </div>
               <div className="border-2 border-dashed border-accent-foreground/20 rounded-xl p-6 text-center">
                 <div className="text-3xl mb-2">🔗</div>
@@ -577,7 +566,7 @@ export const OnboardingWizard = ({ restaurantName: initialName }: OnboardingWiza
           <div className="bg-card border border-destructive/30 rounded-2xl p-8 text-center shadow-sm animate-fade-up">
             <div className="text-4xl mb-3">⚠️</div>
             <div className="font-bold text-base text-destructive mb-1.5">Scan failed</div>
-            <div className="text-sm text-muted-foreground mb-5">The link may block automated access. Try a photo instead.</div>
+            <div className="text-sm text-muted-foreground mb-5">Use a clear JPG, PNG, WebP, or PDF. Large photos are compressed before scanning.</div>
             <div className="flex gap-2 justify-center">
               <Button variant="outline" onClick={() => { setScanState('idle'); setMenuUrlInput(''); }}>Try again</Button>
               <Button onClick={() => fileRef.current?.click()}>📸 Upload photo</Button>
@@ -785,7 +774,7 @@ export const OnboardingWizard = ({ restaurantName: initialName }: OnboardingWiza
                 <button
                   key={pos.id}
                   className="flex items-center gap-3 p-4 border border-border rounded-xl text-left hover:border-primary/50 hover:bg-primary/5 transition-all group"
-                  onClick={() => toast.info(`${pos.name} integration coming soon!`)}
+                  onClick={() => toast.info(`Finish setup, then connect ${pos.name} from Sales > POS.`)}
                 >
                   <span className="text-2xl">{pos.icon}</span>
                   <div className="flex-1">

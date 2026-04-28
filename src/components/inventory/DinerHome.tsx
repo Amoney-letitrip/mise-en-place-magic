@@ -1,5 +1,6 @@
 import { Snowflake } from 'lucide-react';
 import type { TabId } from '@/lib/types';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 interface DinerHomeProps {
   setTab: (tab: TabId) => void;
@@ -30,6 +31,15 @@ interface BadgeConfig {
   isUrgent: boolean;
 }
 
+const MOBILE_ICONS: Record<string, string> = {
+  sales: '💰',
+  recipes: '📋',
+  inventory: '📦',
+  overview: '📊',
+  orders: '🛒',
+  costs: '📈',
+};
+
 export const DinerHome = ({
   setTab,
   restaurantName,
@@ -42,6 +52,7 @@ export const DinerHome = ({
   ordersDue,
   totalSales,
 }: DinerHomeProps) => {
+  const isMobile = useIsMobile();
   const badges: BadgeConfig[] = [
     {
       id: 'sales', label: 'Sales', top: '13%', left: '63%',
@@ -91,6 +102,64 @@ export const DinerHome = ({
     { label: 'Orders', count: ordersDue, color: getStatusColor(ordersDue, 1, 1) },
     { label: 'Freshness', count: freshnessCount, color: freshnessCount === 0 ? '#27AE60' : freshnessCount <= 2 ? '#E67E22' : '#E74C3C' },
   ];
+
+  // ── Mobile: card-grid layout (avoids overlapping absolute badges) ──
+  if (isMobile) {
+    const now = new Date();
+    const hour = now.getHours();
+    const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+
+    return (
+      <div className="min-h-screen flex flex-col" style={{ background: '#151010' }}>
+        {/* Header */}
+        <div className="px-5 pt-12 pb-5">
+          <p className="text-white/50 text-sm mb-0.5">{greeting} 👋</p>
+          {restaurantName && (
+            <h1 className="text-2xl font-extrabold text-white">{restaurantName}</h1>
+          )}
+        </div>
+
+        {/* Nav card grid */}
+        <div className="flex-1 px-4 pb-6 grid grid-cols-2 gap-3">
+          {badges.map(b => (
+            <button
+              key={b.id}
+              onClick={() => setTab(b.id)}
+              className="flex flex-col items-start p-4 rounded-2xl text-left active:scale-95 transition-transform"
+              style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)' }}
+            >
+              <div className="flex items-center justify-between w-full mb-3">
+                <span className="text-2xl">{MOBILE_ICONS[b.id]}</span>
+                <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: b.color }} />
+              </div>
+              <span className="text-white font-bold text-[15px]">{b.label}</span>
+              {b.count != null && b.count > 0 ? (
+                <span className="text-xs mt-1 font-semibold" style={{ color: b.color }}>
+                  {b.count} alert{b.count !== 1 ? 's' : ''}
+                </span>
+              ) : (
+                <span className="text-xs text-white/35 mt-1">All clear</span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* Status bar */}
+        <div
+          className="flex items-center justify-around px-4 py-3"
+          style={{ background: 'rgba(0,0,0,0.5)', borderTop: '1px solid rgba(255,255,255,0.08)' }}
+        >
+          {statusItems.map((s) => (
+            <div key={s.label} className="flex flex-col items-center gap-0.5">
+              <span className="rounded-full inline-block" style={{ width: '8px', height: '8px', background: s.color }} />
+              <span className="text-[10px] text-white/50">{s.label}</span>
+              <span className="text-[11px] font-bold text-white">{s.count === 0 ? 'OK' : s.count}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex items-center justify-center min-h-screen" style={{ background: '#151010' }}>

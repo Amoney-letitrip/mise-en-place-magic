@@ -51,19 +51,19 @@ export const CostsTab = ({ ingredients, recipes, setTab, expiredLots = [] }: Cos
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 mb-4">
         <div className={`bg-card border rounded-lg p-4 ${avgFoodCostPct > 35 ? 'bg-red-50/50 border-red-200' : pricedRecipes.length > 0 ? 'bg-emerald-50/50 border-emerald-200' : 'border-border'}`}>
-          <div className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">🥩 Avg Food Cost %</div>
+          <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1.5">🥩 Avg Food Cost %</div>
           <div className={`text-4xl font-extrabold leading-none mb-1 ${pricedRecipes.length === 0 ? 'text-muted-foreground/30' : avgFoodCostPct > 35 ? 'text-destructive' : 'text-emerald-600'}`}>
             {pricedRecipes.length === 0 ? '—' : `${avgFoodCostPct.toFixed(1)}%`}
           </div>
           <div className="text-[11px] text-muted-foreground">{pricedRecipes.length === 0 ? 'Set menu prices to calculate' : 'Target: under 30%'}</div>
         </div>
         <div className="bg-card border border-border rounded-lg p-4">
-          <div className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">📦 Inventory Value</div>
+          <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1.5">📦 Inventory Value</div>
           <div className="text-4xl font-extrabold leading-none mb-1 text-foreground">${totalIngCost.toFixed(0)}</div>
           <div className="text-[11px] text-muted-foreground">current on-hand stock</div>
         </div>
         <div className={`rounded-lg p-4 ${wasteValue > 0 ? 'bg-amber-50/50 border border-amber-200' : 'bg-card border border-border'}`}>
-          <div className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">🗑 Est. Waste Value</div>
+          <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1.5">🗑 Est. Waste Value</div>
           <div className={`text-4xl font-extrabold leading-none mb-1 ${wasteValue > 0 ? 'text-amber-600' : 'text-muted-foreground/30'}`}>
             ${wasteValue.toFixed(2)}
           </div>
@@ -79,15 +79,53 @@ export const CostsTab = ({ ingredients, recipes, setTab, expiredLots = [] }: Cos
         {recipeMargins.length === 0 ? (
           <div className="p-6 text-center text-muted-foreground text-[13px]">No verified recipes yet — verify recipes to see cost breakdown</div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          <div className="md:hidden divide-y divide-border/30">
+            {recipeMargins.map(r => (
+              <div key={r.name} className="px-4 py-3">
+                <div className="font-semibold text-[15px] mb-2">{r.name}</div>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[13px]">
+                  <div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-0.5">Ingredient cost</div>
+                    <Mono>${r.cost.toFixed(2)}</Mono>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-0.5">Menu price</div>
+                    {r.hasPrice
+                      ? <Mono className="text-emerald-600">${r.price.toFixed(2)}</Mono>
+                      : <button className="text-xs text-primary hover:underline font-semibold" onClick={() => setTab?.('recipes')}>Set price →</button>}
+                  </div>
+                  {r.hasPrice && (
+                    <>
+                      <div>
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">Food cost %</div>
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                            <div className={`h-full rounded-full ${r.pct > 35 ? 'bg-destructive' : r.pct > 30 ? 'bg-warning' : 'bg-stock-good'}`} style={{ width: `${Math.min(100, r.pct)}%` }} />
+                          </div>
+                          <span className={`font-bold text-[13px] w-[42px] text-right ${r.pct > 35 ? 'text-destructive' : r.pct > 30 ? 'text-amber-600' : 'text-emerald-600'}`}>{r.pct.toFixed(1)}%</span>
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-0.5">Gross margin</div>
+                        <span className="font-bold text-emerald-600 text-[15px]">${r.margin.toFixed(2)}</span>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-[13px]">
               <thead>
                 <tr className="bg-muted/50">
-                  <th className="text-left text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">Recipe</th>
-                  <th className="text-left text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">Ingredient Cost</th>
-                  <th className="text-left text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">Menu Price</th>
-                  <th className="text-left text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">Food Cost %</th>
-                  <th className="text-left text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">Gross Margin</th>
+                  <th className="text-left text-xs font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">Recipe</th>
+                  <th className="text-left text-xs font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">Ingredient Cost</th>
+                  <th className="text-left text-xs font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">Menu Price</th>
+                  <th className="text-left text-xs font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">Food Cost %</th>
+                  <th className="text-left text-xs font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">Gross Margin</th>
                 </tr>
               </thead>
               <tbody>
@@ -131,6 +169,7 @@ export const CostsTab = ({ ingredients, recipes, setTab, expiredLots = [] }: Cos
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
 
@@ -145,15 +184,34 @@ export const CostsTab = ({ ingredients, recipes, setTab, expiredLots = [] }: Cos
             No ingredients yet — add ingredients to track unit costs and inventory value
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          <div className="md:hidden divide-y divide-border/30">
+            {ingredients.map(ing => (
+              <div key={ing.id} className="px-4 py-3 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="font-semibold text-[15px] truncate">{ing.name}</div>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <StatusTag variant="slate">{ing.unit}</StatusTag>
+                    <span className="text-[12px] text-muted-foreground">{fmtN(ing.current_stock)} on hand</span>
+                  </div>
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <Mono className="text-[15px] font-bold">${(ing.current_stock * ing.cost_per_unit).toFixed(2)}</Mono>
+                  <div className="text-[11px] text-muted-foreground mt-0.5">${ing.cost_per_unit.toFixed(3)}/{ing.unit}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-[13px]">
               <thead>
                 <tr className="bg-muted/50">
-                  <th className="text-left text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">Ingredient</th>
-                  <th className="text-left text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">Unit</th>
-                  <th className="text-left text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">Cost / Unit</th>
-                  <th className="text-left text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">On Hand</th>
-                  <th className="text-left text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">Stock Value</th>
+                  <th className="text-left text-xs font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">Ingredient</th>
+                  <th className="text-left text-xs font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">Unit</th>
+                  <th className="text-left text-xs font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">Cost / Unit</th>
+                  <th className="text-left text-xs font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">On Hand</th>
+                  <th className="text-left text-xs font-bold uppercase tracking-wider text-muted-foreground px-3.5 py-2.5">Stock Value</th>
                 </tr>
               </thead>
               <tbody>
@@ -169,6 +227,7 @@ export const CostsTab = ({ ingredients, recipes, setTab, expiredLots = [] }: Cos
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
     </div>

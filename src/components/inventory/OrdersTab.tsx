@@ -165,7 +165,57 @@ export const OrdersTab = ({ orderDraft, vendors, forecasts, targetDays, setTarge
                       <Button variant="outline" disabled>No email on file</Button>
                     )}
                   </div>
-                  <div className="overflow-x-auto">
+                  {/* ── Mobile: order item cards ── */}
+                  <div className="md:hidden divide-y divide-border/30">
+                    {ve.items.map(item => {
+                      const fc = forecasts[item.id];
+                      const orderDue = fc?.orderByDate && diffDays(fc.orderByDate, now) <= 0;
+                      return (
+                        <div key={item.id} className="px-4 py-3">
+                          {/* Name + order-by urgency */}
+                          <div className="flex items-start justify-between gap-2 mb-2">
+                            <span className="font-semibold text-[15px] leading-tight">{item.name}</span>
+                            {fc?.orderByDate && (
+                              <StatusTag variant={orderDue ? 'red' : 'gray'}>
+                                {orderDue ? 'Order today!' : `By ${fmtDate(fc.orderByDate)}`}
+                              </StatusTag>
+                            )}
+                          </div>
+                          {/* Two-column detail row */}
+                          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[13px] mb-2">
+                            <div>
+                              <span className="text-muted-foreground text-[11px]">On hand </span>
+                              <Mono className={item.current_stock <= item.threshold ? 'text-destructive font-semibold' : ''}>
+                                {fmtN(item.current_stock)} {item.unit}
+                              </Mono>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground text-[11px]">Daily use </span>
+                              <Mono className="text-muted-foreground">{fc?.adu > 0 ? `${fmtN(fc.adu)}/d` : '—'}</Mono>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground text-[11px]">Days left </span>
+                              <StatusTag variant={fc?.daysLeft <= (vm?.lead_time_days ?? 2) ? 'red' : fc?.daysLeft <= 5 ? 'yellow' : 'green'}>
+                                {fc?.daysLeft === Infinity ? '∞' : `${Math.round(fc?.daysLeft ?? 0)}d`}
+                              </StatusTag>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground text-[11px]">Stockout </span>
+                              <span className="text-[13px]">{fc?.stockoutDate ? fmtDate(fc.stockoutDate) : '—'}</span>
+                            </div>
+                          </div>
+                          {/* Order quantity highlight */}
+                          <div className="flex items-center gap-1.5 pt-2 border-t border-border/30">
+                            <span className="text-[11px] text-muted-foreground uppercase tracking-wider font-bold">Order qty</span>
+                            <Mono className="font-bold text-[15px]">{fmtN(fc?.recommendedQty ?? 0)} {item.unit}</Mono>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* ── Desktop: table (hidden on mobile) ── */}
+                  <div className="hidden md:block overflow-x-auto">
                     <table className="w-full text-[13px]">
                       <thead>
                         <tr className="bg-muted/50">
