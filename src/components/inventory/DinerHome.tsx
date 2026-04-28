@@ -34,6 +34,7 @@ interface StationConfig {
   action: string;
   top: string;
   left: string;
+  mobileBg: string;
   color: string;
   count?: number;
   isUrgent: boolean;
@@ -71,6 +72,7 @@ export const DinerHome = ({
       action: flaggedSales > 0 ? 'Review flagged tickets before stock moves.' : `${totalSales} sales logged.`,
       top: '13%',
       left: '63%',
+      mobileBg: '62% 12%',
       color: getStatusColor(flaggedSales, 3),
       count: flaggedSales || undefined,
       isUrgent: flaggedSales > 3,
@@ -83,6 +85,7 @@ export const DinerHome = ({
       action: draftRecipes > 0 ? 'Verify draft recipes so inventory can track portions.' : 'Recipe book is ready.',
       top: '48%',
       left: '48%',
+      mobileBg: '46% 50%',
       color: getStatusColor(draftRecipes, 2),
       count: draftRecipes || undefined,
       isUrgent: draftRecipes > 2,
@@ -95,6 +98,7 @@ export const DinerHome = ({
       action: lowItems > 0 ? 'Count low stock and check lots before service.' : 'Stock levels are clear.',
       top: '44%',
       left: '73%',
+      mobileBg: '73% 44%',
       color: getStatusColor(lowItems, 3),
       count: lowItems || undefined,
       isUrgent: lowItems > 3,
@@ -107,6 +111,7 @@ export const DinerHome = ({
       action: activeTotal > 0 ? 'Start with the shift overview and clear the queue.' : 'The floor is quiet.',
       top: '49%',
       left: '87%',
+      mobileBg: '88% 50%',
       color: getStatusColor(activeTotal, 5),
       count: activeTotal || undefined,
       isUrgent: activeTotal > 5,
@@ -119,6 +124,7 @@ export const DinerHome = ({
       action: ordersDue > 0 ? 'Build purchase orders before the next delivery window.' : 'No orders are due.',
       top: '63%',
       left: '61%',
+      mobileBg: '60% 64%',
       color: getStatusColor(ordersDue, 1),
       count: ordersDue || undefined,
       isUrgent: ordersDue > 1,
@@ -131,6 +137,7 @@ export const DinerHome = ({
       action: 'Check recipe margin and inventory value.',
       top: '24%',
       left: '80%',
+      mobileBg: '80% 24%',
       color: '#27AE60',
       isUrgent: false,
       icon: LineChart,
@@ -211,8 +218,13 @@ export const DinerHome = ({
                 onPointerEnter={() => updateActive(station.id)}
                 className="flex flex-col items-start p-4 rounded-2xl text-left active:scale-95 transition-transform"
                 style={{
-                  background: isActive ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.07)',
+                  backgroundColor: isActive ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.07)',
+                  backgroundImage: `linear-gradient(135deg, rgba(12,8,7,${isActive ? 0.58 : 0.74}), rgba(12,8,7,${isActive ? 0.36 : 0.58})), url("/diner-home.png")`,
+                  backgroundSize: '100% 100%, 360%',
+                  backgroundPosition: `center, ${station.mobileBg}`,
+                  backgroundRepeat: 'no-repeat',
                   border: `1px solid ${isActive ? station.color : 'rgba(255,255,255,0.1)'}`,
+                  boxShadow: isActive ? `0 0 0 1px ${station.color}30 inset` : '0 0 0 1px rgba(255,255,255,0.02) inset',
                 }}
               >
                 <div className="flex items-center justify-between w-full mb-3">
