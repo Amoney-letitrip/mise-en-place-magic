@@ -1,6 +1,16 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { StatusTag, Mono, SectionHead } from './StatusTag';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import type { Database } from '@/integrations/supabase/types';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -17,6 +27,8 @@ const POS_SYSTEMS = [
   { id: 'clover' as const,     name: 'Clover',     color: '#1DA462', desc: 'Smart POS System' },
   { id: 'lightspeed' as const, name: 'Lightspeed', color: '#FFC72C', desc: 'Retail & Restaurant POS' },
 ];
+
+type POSType = typeof POS_SYSTEMS[number]['id'];
 
 const HISTORY_PAGE_SIZE = 20;
 
@@ -59,6 +71,8 @@ export const SalesTab = ({ sales, recipes, flaggedSales, fefo }: SalesTabProps) 
   const [csvResult, setCsvResult] = useState<{ err?: string; processed?: number; flagged?: number; total?: number } | null>(null);
   const [historyPage, setHistoryPage] = useState(1);
   const [disconnecting, setDisconnecting] = useState<string | null>(null);
+  const [credentialPOS, setCredentialPOS] = useState<typeof POS_SYSTEMS[number] | null>(null);
+  const [posCredentials, setPOSCredentials] = useState({ clientId: '', clientSecret: '' });
   const saleTimer = useRef<NodeJS.Timeout | null>(null);
   const qc = useQueryClient();
 
@@ -144,8 +158,38 @@ export const SalesTab = ({ sales, recipes, flaggedSales, fefo }: SalesTabProps) 
     }
   };
 
-  const handleConnect = (posType: 'square' | 'clover' | 'toast' | 'lightspeed') => {
-    initiatePOSOAuth.mutate(posType, {
+  const handleConnect = (posType: POSType) => {
+    const pos = POS_SYSTEMS.find((system) => system.id === posType);
+    if (!pos) return;
+    const savedClientId = window.localStorage.getItem(`mep_pos_${posType}_client_id`) || '';
+    setPOSCredentials({ clientId: savedClientId, clientSecret: '' });
+    setCredentialPOS(pos);
+  };
+
+  const startPOSOAuth = () => {
+    if (!credentialPOS) return;
+    const clientId = posCredentials.clientId.trim();
+    const clientSecret = posCredentials.clientSecret.trim();
+
+    if (!clientId) {
+      toast.error(`${credentialPOS.name} Application ID is required`);
+      return;
+    }
+    if (!clientSecret) {
+      toast.error(`${credentialPOS.name} Application Secret is required`);
+      return;
+    }
+
+    window.localStorage.setItem(`mep_pos_${credentialPOS.id}_client_id`, clientId);
+    initiatePOSOAuth.mutate({
+      posType: credentialPOS.id,
+      clientId,
+      clientSecret,
+    }, {
+      onSuccess: () => {
+        setCredentialPOS(null);
+        setPOSCredentials({ clientId: '', clientSecret: '' });
+      },
       onError: (err) => toast.error(`Could not start OAuth: ${err.message}`),
     });
   };
@@ -155,6 +199,63 @@ export const SalesTab = ({ sales, recipes, flaggedSales, fefo }: SalesTabProps) 
   return (
     <div className="animate-fade-up">
       <SectionHead title="Sales" sub="Record sales, import CSV, or sync your POS" />
+
+      <Dialog open={!!credentialPOS} onOpenChange={(open) => {
+        if (!open) {
+          setCredentialPOS(null);
+          setPOSCredentials({ clientId: '', clientSecret: '' });
+        }
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Connect {credentialPOS?.name}</DialogTitle>
+            <DialogDescription>
+              Enter the app credentials from your POS developer dashboard. The Application ID can be remembered on this device; the secret is used only to start this secure connection.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-1.5">
+              <Label htmlFor="pos-client-id">Application ID</Label>
+              <Input
+                id="pos-client-id"
+                autoComplete="off"
+                placeholder={credentialPOS?.id === 'square' ? 'sq0idp-...' : 'Application ID'}
+                value={posCredentials.clientId}
+                onChange={(event) => setPOSCredentials((current) => ({ ...current, clientId: event.target.value }))}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="pos-client-secret">Application Secret</Label>
+              <Input
+                id="pos-client-secret"
+                type="password"
+                autoComplete="off"
+                placeholder="Paste the application secret"
+                value={posCredentials.clientSecret}
+                onChange={(event) => setPOSCredentials((current) => ({ ...current, clientSecret: event.target.value }))}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') startPOSOAuth();
+                }}
+              />
+            </div>
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              For Square, use the same app whose OAuth redirect URL is your Supabase callback URL.
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCredentialPOS(null)}>Cancel</Button>
+            <Button
+              onClick={startPOSOAuth}
+              disabled={initiatePOSOAuth.isPending}
+              style={{ background: credentialPOS?.color, color: credentialPOS?.color === '#FFC72C' ? '#333' : 'white' }}
+            >
+              {initiatePOSOAuth.isPending ? 'Starting…' : `Connect ${credentialPOS?.name || 'POS'}`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Sub-tabs */}
       <div className="border-b border-border mb-4 flex gap-5">

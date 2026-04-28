@@ -6,6 +6,11 @@ const migration = readFileSync(
   "utf8",
 );
 
+const credentialMigration = readFileSync(
+  "supabase/migrations/20260428000100_pos_oauth_app_credentials.sql",
+  "utf8",
+);
+
 const callback = readFileSync(
   "supabase/functions/pos-oauth-callback/index.ts",
   "utf8",
@@ -27,6 +32,8 @@ describe("POS OAuth hardening", () => {
   it("client sends only an opaque nonce as OAuth state", () => {
     expect(inventoryHook).toContain("const state = crypto.randomUUID()");
     expect(inventoryHook).toContain(".from('pos_oauth_states')");
+    expect(inventoryHook).toContain("provider_client_id: clientId");
+    expect(inventoryHook).toContain("provider_client_secret: clientSecret?.trim() || null");
     expect(inventoryHook).not.toContain("btoa(JSON.stringify");
   });
 
@@ -36,5 +43,12 @@ describe("POS OAuth hardening", () => {
     expect(callback).toContain("state_already_used");
     expect(callback).toContain("state_expired");
     expect(callback).toContain(".is(\"used_at\", null)");
+  });
+
+  it("supports app-supplied POS credentials without keeping the secret after callback consumption", () => {
+    expect(credentialMigration).toContain("provider_client_id TEXT");
+    expect(credentialMigration).toContain("provider_client_secret TEXT");
+    expect(callback).toContain("provider_client_id,provider_client_secret");
+    expect(callback).toContain("provider_client_secret: null");
   });
 });

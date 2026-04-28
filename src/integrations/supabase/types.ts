@@ -270,6 +270,8 @@ export type Database = {
           created_at: string
           expires_at: string
           pos_type: string
+          provider_client_id: string | null
+          provider_client_secret: string | null
           redirect_origin: string
           state: string
           used_at: string | null
@@ -279,6 +281,8 @@ export type Database = {
           created_at?: string
           expires_at: string
           pos_type: string
+          provider_client_id?: string | null
+          provider_client_secret?: string | null
           redirect_origin: string
           state: string
           used_at?: string | null
@@ -288,6 +292,8 @@ export type Database = {
           created_at?: string
           expires_at?: string
           pos_type?: string
+          provider_client_id?: string | null
+          provider_client_secret?: string | null
           redirect_origin?: string
           state?: string
           used_at?: string | null
