@@ -87,7 +87,7 @@ serve(async (req) => {
 
   const { data: oauthState, error: stateLookupError } = await supabase
     .from("pos_oauth_states")
-    .select("state,user_id,pos_type,redirect_origin,expires_at,used_at")
+    .select("state,user_id,pos_type,redirect_origin,expires_at,used_at,provider_client_id,provider_client_secret")
     .eq("state", stateParam)
     .maybeSingle();
 
@@ -128,11 +128,11 @@ serve(async (req) => {
   }
 
   const providerConfig = TOKEN_ENDPOINTS[posType];
-  const clientId = Deno.env.get(providerConfig.clientIdEnv);
-  const clientSecret = Deno.env.get(providerConfig.clientSecretEnv);
+  const clientId = (oauthState.provider_client_id as string | null) || Deno.env.get(providerConfig.clientIdEnv);
+  const clientSecret = (oauthState.provider_client_secret as string | null) || Deno.env.get(providerConfig.clientSecretEnv);
 
   if (!clientId || !clientSecret) {
-    console.error(`Missing env vars for ${posType}: ${providerConfig.clientIdEnv}, ${providerConfig.clientSecretEnv}`);
+    console.error(`Missing OAuth credentials for ${posType}`);
     return redirectWith(redirectOrigin, "pos_error", "not_configured");
   }
 
@@ -140,7 +140,7 @@ serve(async (req) => {
 
   const { error: consumeError } = await supabase
     .from("pos_oauth_states")
-    .update({ used_at: new Date().toISOString() })
+    .update({ used_at: new Date().toISOString(), provider_client_secret: null })
     .eq("state", stateParam)
     .is("used_at", null)
     .select("state")

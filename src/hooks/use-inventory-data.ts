@@ -361,7 +361,15 @@ export const useDisconnectPOS = () => {
 
 export const useInitiatePOSOAuth = () => {
   return useMutation({
-    mutationFn: async (posType: 'square' | 'clover' | 'toast' | 'lightspeed') => {
+    mutationFn: async ({
+      posType,
+      clientId: providedClientId,
+      clientSecret,
+    }: {
+      posType: 'square' | 'clover' | 'toast' | 'lightspeed';
+      clientId?: string;
+      clientSecret?: string;
+    }) => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
 
@@ -375,11 +383,11 @@ export const useInitiatePOSOAuth = () => {
         lightspeed: 'VITE_LIGHTSPEED_CLIENT_ID',
       };
 
-      const clientId = (import.meta.env as Record<string, string>)[CLIENT_ID_KEYS[posType]];
+      const clientId = providedClientId?.trim() || (import.meta.env as Record<string, string>)[CLIENT_ID_KEYS[posType]];
       if (!clientId) {
         throw new Error(
           `${posType.charAt(0).toUpperCase() + posType.slice(1)} client ID is not configured. ` +
-          `Add ${CLIENT_ID_KEYS[posType]} to your local environment variables.`
+          `Enter it in the connection form.`
         );
       }
 
@@ -391,6 +399,8 @@ export const useInitiatePOSOAuth = () => {
           state,
           user_id: user.id,
           pos_type: posType,
+          provider_client_id: clientId,
+          provider_client_secret: clientSecret?.trim() || null,
           redirect_origin: window.location.origin,
           expires_at: expiresAt,
         });
