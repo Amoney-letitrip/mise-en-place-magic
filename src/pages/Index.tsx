@@ -1,5 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import type { InventoryContext } from '@/lib/chat-assistant';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useAppState } from '@/hooks/use-app-state';
@@ -43,6 +44,42 @@ const Index = () => {
   ];
 
   const queryClient = useQueryClient();
+
+  // Build AI chat context from already-loaded state (no extra queries needed)
+  const chatContext = useMemo((): InventoryContext => ({
+    restaurantName: profile?.restaurant_name,
+    lowItems: state.lowItems.map(i => ({
+      name: i.name,
+      current_stock: i.current_stock,
+      threshold: i.threshold,
+      unit: i.unit,
+    })),
+    stockoutRisk: state.stockoutRisk.map(i => {
+      const fc = state.forecasts[i.id];
+      return {
+        name: i.name,
+        unit: i.unit,
+        daysLeft: fc && fc.daysLeft !== Infinity ? Math.round(fc.daysLeft) : 999,
+      };
+    }),
+    expiredLots: state.expiredLots.map(l => ({
+      lot_label: l.lot_label,
+      expires_at: l.expires_at,
+      ingredient_name: state.ingredients.find(i => i.id === l.ingredient_id)?.name,
+    })),
+    expiringLots: state.expiringLots.map(l => ({
+      lot_label: l.lot_label,
+      expires_at: l.expires_at,
+      ingredient_name: state.ingredients.find(i => i.id === l.ingredient_id)?.name,
+    })),
+    ordersDue: state.orderDraft.filter(v => v.anyDue).map(v => ({
+      vendor: v.vendor,
+      itemCount: v.items.length,
+    })),
+    flaggedSalesCount: state.flaggedSales.length,
+    draftRecipesCount: state.draftRecipes.length,
+    totalSalesCount: state.sales.length,
+  }), [state, profile]);
 
   // Error state
   if (state.hasError) {
@@ -94,6 +131,7 @@ const Index = () => {
           draftRecipes={state.draftRecipes.length}
           ordersDue={state.orderDraft.filter(v => v.anyDue).length}
           totalSales={state.sales.length}
+          chatContext={chatContext}
         />
         {isMobile && <MobileNav tab={state.tab} setTab={state.setTab} navItems={navItems} />}
       </div>

@@ -47,6 +47,46 @@ export interface RecipeIngredient {
   confidence: number;
 }
 
+export interface PosIntegration {
+  id: string;
+  user_id: string;
+  provider: string;
+  status: 'not_connected' | 'connected' | 'syncing' | 'error';
+  access_token: string | null;
+  refresh_token: string | null;
+  external_location_id: string | null;
+  last_synced_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PosMenuItem {
+  id: string;
+  user_id: string;
+  provider: string;
+  external_item_id: string;
+  external_variation_id: string | null;
+  name: string;
+  category: string | null;
+  price_cents: number | null;
+  is_active: boolean;
+  raw_payload: Record<string, unknown> | null;
+  last_synced_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RecipePosMapping {
+  id: string;
+  user_id: string;
+  recipe_id: string;
+  pos_menu_item_id: string;
+  confidence_score: number | null;
+  mapping_status: 'unmapped' | 'suggested' | 'confirmed' | 'ignored';
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Sale {
   id: string;
   item: string;

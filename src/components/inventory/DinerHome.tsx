@@ -6,13 +6,16 @@ import {
   CheckCircle2,
   ClipboardList,
   LineChart,
+  MessageCircle,
   Package,
   ShoppingCart,
   Snowflake,
   type LucideIcon,
 } from 'lucide-react';
 import type { TabId } from '@/lib/types';
+import type { InventoryContext } from '@/lib/chat-assistant';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { AIChatDrawer, AIChatButton } from './AIChatDrawer';
 
 interface DinerHomeProps {
   setTab: (tab: TabId) => void;
@@ -25,6 +28,7 @@ interface DinerHomeProps {
   draftRecipes: number;
   ordersDue: number;
   totalSales: number;
+  chatContext: InventoryContext;
 }
 
 interface StationConfig {
@@ -58,8 +62,10 @@ export const DinerHome = ({
   draftRecipes,
   ordersDue,
   totalSales,
+  chatContext,
 }: DinerHomeProps) => {
   const isMobile = useIsMobile();
+  const [chatOpen, setChatOpen] = useState(false);
   const freshnessCount = expiredLots + expiringLots;
   const freshnessColor = expiredLots > 0 ? '#E74C3C' : '#E67E22';
   const activeTotal = lowItems + flaggedSales + draftRecipes + ordersDue + freshnessCount;
@@ -181,6 +187,9 @@ export const DinerHome = ({
                 </div>
               </div>
             </div>
+            <div className="absolute top-3 right-3">
+              <AIChatButton onClick={() => setChatOpen(true)} hasAlerts={activeTotal > 0} />
+            </div>
 
             {stations.map((station) => (
               <button
@@ -257,6 +266,19 @@ export const DinerHome = ({
             </div>
           ))}
         </div>
+
+        <AIChatDrawer
+          open={chatOpen}
+          onClose={() => setChatOpen(false)}
+          setTab={setTab}
+          context={chatContext}
+          lowItems={lowItems}
+          stockoutRisk={stockoutRisk}
+          expiredLots={expiredLots}
+          ordersDue={ordersDue}
+          flaggedSales={flaggedSales}
+          draftRecipes={draftRecipes}
+        />
       </div>
     );
   }
@@ -309,6 +331,14 @@ export const DinerHome = ({
             >
               <ActiveIcon className="h-4 w-4" />
               Open {activeStation.label}
+            </button>
+
+            <button
+              onClick={() => setChatOpen(true)}
+              className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-white/12 px-4 py-2.5 text-[13px] font-bold text-white/55 hover:bg-white/10 hover:text-white transition-all focus:outline-none focus:ring-2 focus:ring-white/40"
+            >
+              <MessageCircle className="h-4 w-4" />
+              Ask Shift Assistant
             </button>
           </div>
 
@@ -410,6 +440,19 @@ export const DinerHome = ({
           }
         `}</style>
       </div>
+
+      <AIChatDrawer
+        open={chatOpen}
+        onClose={() => setChatOpen(false)}
+        setTab={setTab}
+        context={chatContext}
+        lowItems={lowItems}
+        stockoutRisk={stockoutRisk}
+        expiredLots={expiredLots}
+        ordersDue={ordersDue}
+        flaggedSales={flaggedSales}
+        draftRecipes={draftRecipes}
+      />
     </div>
   );
 };

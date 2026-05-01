@@ -16,6 +16,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { usePOSConnections, useDisconnectPOS, useInitiatePOSOAuth } from '@/hooks/use-inventory-data';
+import { PosMenuSync } from './PosMenuSync';
 
 type Sale = Database['public']['Tables']['sales']['Row'];
 type Ingredient = Database['public']['Tables']['ingredients']['Row'];
@@ -425,6 +426,8 @@ export const SalesTab = ({ sales, recipes, flaggedSales, fefo }: SalesTabProps) 
       {/* POS INTEGRATION */}
       {subTab === 'pos' && (
         <div className="space-y-3.5">
+          <PosMenuSync recipes={recipes} />
+
           <div className="bg-card border border-border rounded-lg p-4">
             <div className="font-bold text-sm mb-1">Connect your POS system</div>
             <p className="text-xs text-muted-foreground mb-4">

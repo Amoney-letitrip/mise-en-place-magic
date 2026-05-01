@@ -148,6 +148,192 @@ export type Database = {
         }
         Relationships: []
       }
+      pos_connections: {
+        Row: {
+          access_token: string | null
+          connected_at: string | null
+          created_at: string
+          error_message: string | null
+          id: string
+          last_sync_at: string | null
+          location_id: string | null
+          merchant_id: string | null
+          metadata: Json | null
+          pos_type: string
+          refresh_token: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          access_token?: string | null
+          connected_at?: string | null
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          last_sync_at?: string | null
+          location_id?: string | null
+          merchant_id?: string | null
+          metadata?: Json | null
+          pos_type: string
+          refresh_token?: string | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          access_token?: string | null
+          connected_at?: string | null
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          last_sync_at?: string | null
+          location_id?: string | null
+          merchant_id?: string | null
+          metadata?: Json | null
+          pos_type?: string
+          refresh_token?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      pos_integrations: {
+        Row: {
+          access_token: string | null
+          created_at: string
+          external_location_id: string | null
+          id: string
+          last_synced_at: string | null
+          provider: string
+          refresh_token: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          access_token?: string | null
+          created_at?: string
+          external_location_id?: string | null
+          id?: string
+          last_synced_at?: string | null
+          provider: string
+          refresh_token?: string | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          access_token?: string | null
+          created_at?: string
+          external_location_id?: string | null
+          id?: string
+          last_synced_at?: string | null
+          provider?: string
+          refresh_token?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      pos_menu_items: {
+        Row: {
+          category: string | null
+          created_at: string
+          external_item_id: string
+          external_variation_id: string | null
+          id: string
+          is_active: boolean
+          last_synced_at: string | null
+          name: string
+          price_cents: number | null
+          provider: string
+          raw_payload: Json | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          category?: string | null
+          created_at?: string
+          external_item_id: string
+          external_variation_id?: string | null
+          id?: string
+          is_active?: boolean
+          last_synced_at?: string | null
+          name: string
+          price_cents?: number | null
+          provider: string
+          raw_payload?: Json | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          category?: string | null
+          created_at?: string
+          external_item_id?: string
+          external_variation_id?: string | null
+          id?: string
+          is_active?: boolean
+          last_synced_at?: string | null
+          name?: string
+          price_cents?: number | null
+          provider?: string
+          raw_payload?: Json | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      recipe_pos_mappings: {
+        Row: {
+          confidence_score: number | null
+          created_at: string
+          id: string
+          mapping_status: string
+          pos_menu_item_id: string
+          recipe_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          confidence_score?: number | null
+          created_at?: string
+          id?: string
+          mapping_status?: string
+          pos_menu_item_id: string
+          recipe_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          confidence_score?: number | null
+          created_at?: string
+          id?: string
+          mapping_status?: string
+          pos_menu_item_id?: string
+          recipe_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "recipe_pos_mappings_pos_menu_item_id_fkey"
+            columns: ["pos_menu_item_id"]
+            isOneToOne: false
+            referencedRelation: "pos_menu_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recipe_pos_mappings_recipe_id_fkey"
+            columns: ["recipe_id"]
+            isOneToOne: false
+            referencedRelation: "recipes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       recipe_ingredients: {
         Row: {
           confidence: number

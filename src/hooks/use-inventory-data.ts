@@ -1,11 +1,13 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import type { Database } from '@/integrations/supabase/types';
+import type { PosIntegration, PosMenuItem, RecipePosMapping } from '@/lib/types';
 
 type Ingredient = Database['public']['Tables']['ingredients']['Row'];
 type IngredientInsert = Database['public']['Tables']['ingredients']['Insert'];
 type Lot = Database['public']['Tables']['lots']['Row'];
 type LotInsert = Database['public']['Tables']['lots']['Insert'];
+type RecipeInsert = Database['public']['Tables']['recipes']['Insert'];
 
 const getUserId = async () => {
   const { data: { user } } = await supabase.auth.getUser();
@@ -417,6 +419,281 @@ export const useInitiatePOSOAuth = () => {
     },
   });
 };
+
+// ─── POS menu sync and recipe mapping ────────────────────────────────────────
+
+const DEMO_POS_ITEMS = [
+  { external_item_id: 'demo-blt', name: 'BLT', category: 'Sandwiches', price_cents: 1195 },
+  { external_item_id: 'demo-turkey-club', name: 'Turkey Club', category: 'Sandwiches', price_cents: 1395 },
+  { external_item_id: 'demo-pancakes', name: 'Pancakes', category: 'Breakfast', price_cents: 1095 },
+  { external_item_id: 'demo-western-omelet', name: 'Western Omelet', category: 'Breakfast', price_cents: 1295 },
+  { external_item_id: 'demo-cheeseburger', name: 'Cheeseburger', category: 'Burgers', price_cents: 1495 },
+  { external_item_id: 'demo-chicken-caesar-wrap', name: 'Chicken Caesar Wrap', category: 'Wraps', price_cents: 1395 },
+  { external_item_id: 'demo-coffee', name: 'Coffee', category: 'Drinks', price_cents: 350 },
+  { external_item_id: 'demo-iced-coffee', name: 'Iced Coffee', category: 'Drinks', price_cents: 450 },
+];
+
+const normalizeMenuName = (value: string) =>
+  value.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+
+const nameSimilarity = (left: string, right: string) => {
+  const a = normalizeMenuName(left);
+  const b = normalizeMenuName(right);
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  if (a.includes(b) || b.includes(a)) return 0.86;
+
+  const aTokens = new Set(a.split(' '));
+  const bTokens = new Set(b.split(' '));
+  const intersection = [...aTokens].filter(token => bTokens.has(token)).length;
+  const union = new Set([...aTokens, ...bTokens]).size;
+  return union === 0 ? 0 : intersection / union;
+};
+
+const buildSuggestedMappings = async (userId: string, posItems: PosMenuItem[]) => {
+  if (posItems.length === 0) return;
+
+  const { data: recipes, error: recipesError } = await supabase
+    .from('recipes')
+    .select('id,name')
+    .eq('user_id', userId);
+  if (recipesError) throw recipesError;
+  if (!recipes?.length) return;
+
+  const itemIds = posItems.map(item => item.id);
+  const { data: existingMappings, error: mappingsError } = await supabase
+    .from('recipe_pos_mappings')
+    .select('*')
+    .in('pos_menu_item_id', itemIds);
+  if (mappingsError) throw mappingsError;
+
+  const mappedItemIds = new Set((existingMappings ?? []).map(mapping => mapping.pos_menu_item_id));
+  const suggestions = posItems.flatMap(item => {
+    if (mappedItemIds.has(item.id)) return [];
+
+    const best = recipes
+      .map(recipe => ({ recipe, score: nameSimilarity(item.name, recipe.name) }))
+      .sort((a, b) => b.score - a.score)[0];
+
+    if (!best || best.score < 0.6) return [];
+    return [{
+      user_id: userId,
+      recipe_id: best.recipe.id,
+      pos_menu_item_id: item.id,
+      confidence_score: Number(best.score.toFixed(2)),
+      mapping_status: 'suggested' as const,
+    }];
+  });
+
+  if (suggestions.length > 0) {
+    const { error } = await supabase.from('recipe_pos_mappings').insert(suggestions);
+    if (error) throw error;
+  }
+};
+
+export interface PosMenuItemWithMapping extends PosMenuItem {
+  mapping: RecipePosMapping | null;
+}
+
+export const usePosIntegrations = () =>
+  useQuery({
+    queryKey: ['pos_integrations'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('pos_integrations')
+        .select('*')
+        .order('provider');
+      if (error) throw error;
+      return (data ?? []) as PosIntegration[];
+    },
+  });
+
+export const usePosMenuItemsWithMappings = () =>
+  useQuery({
+    queryKey: ['pos_menu_items_with_mappings'],
+    queryFn: async () => {
+      const { data: items, error: itemsError } = await supabase
+        .from('pos_menu_items')
+        .select('*')
+        .order('name');
+      if (itemsError) throw itemsError;
+
+      const itemIds = (items ?? []).map(item => item.id);
+      if (itemIds.length === 0) return [] as PosMenuItemWithMapping[];
+
+      const { data: mappings, error: mappingsError } = await supabase
+        .from('recipe_pos_mappings')
+        .select('*')
+        .in('pos_menu_item_id', itemIds)
+        .order('mapping_status');
+      if (mappingsError) throw mappingsError;
+
+      const mappingByItem = new Map<string, RecipePosMapping>();
+      (mappings ?? []).forEach(mapping => {
+        const existing = mappingByItem.get(mapping.pos_menu_item_id);
+        if (!existing || mapping.mapping_status === 'confirmed') {
+          mappingByItem.set(mapping.pos_menu_item_id, mapping as RecipePosMapping);
+        }
+      });
+
+      return (items ?? []).map(item => ({
+        ...(item as PosMenuItem),
+        mapping: mappingByItem.get(item.id) ?? null,
+      }));
+    },
+  });
+
+export const useSyncDemoPOSMenu = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (provider = 'manual_demo') => {
+      const userId = await getUserId();
+      const syncedAt = new Date().toISOString();
+
+      const { error: integrationError } = await supabase
+        .from('pos_integrations')
+        .upsert({
+          user_id: userId,
+          provider,
+          status: 'connected',
+          external_location_id: 'demo-location',
+          last_synced_at: syncedAt,
+        }, { onConflict: 'user_id,provider' });
+      if (integrationError) throw integrationError;
+
+      const rows = DEMO_POS_ITEMS.map(item => ({
+        ...item,
+        user_id: userId,
+        provider,
+        external_variation_id: null,
+        is_active: true,
+        raw_payload: item,
+        last_synced_at: syncedAt,
+      }));
+
+      const { error: itemsError } = await supabase
+        .from('pos_menu_items')
+        .upsert(rows, { onConflict: 'user_id,provider,external_item_id,external_variation_id' });
+      if (itemsError) throw itemsError;
+
+      const { data: syncedItems, error: syncedItemsError } = await supabase
+        .from('pos_menu_items')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('provider', provider);
+      if (syncedItemsError) throw syncedItemsError;
+
+      await buildSuggestedMappings(userId, (syncedItems ?? []) as PosMenuItem[]);
+      return syncedItems ?? [];
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['pos_integrations'] });
+      qc.invalidateQueries({ queryKey: ['pos_menu_items_with_mappings'] });
+    },
+  });
+};
+
+export const useConfirmRecipePosMapping = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ posMenuItemId, recipeId, confidenceScore = 1 }: {
+      posMenuItemId: string;
+      recipeId: string;
+      confidenceScore?: number;
+    }) => {
+      const userId = await getUserId();
+
+      const { error: deleteError } = await supabase
+        .from('recipe_pos_mappings')
+        .delete()
+        .eq('user_id', userId)
+        .eq('pos_menu_item_id', posMenuItemId);
+      if (deleteError) throw deleteError;
+
+      const { error } = await supabase
+        .from('recipe_pos_mappings')
+        .insert({
+          user_id: userId,
+          recipe_id: recipeId,
+          pos_menu_item_id: posMenuItemId,
+          confidence_score: confidenceScore,
+          mapping_status: 'confirmed',
+        });
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['pos_menu_items_with_mappings'] }),
+  });
+};
+
+export const useCreateRecipeFromPosItem = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (posItem: PosMenuItem) => {
+      const userId = await getUserId();
+      const recipe: RecipeInsert = {
+        name: posItem.name,
+        status: 'draft',
+        menu_price: posItem.price_cents ? posItem.price_cents / 100 : 0,
+        user_id: userId,
+      };
+
+      const { data: createdRecipe, error: recipeError } = await supabase
+        .from('recipes')
+        .insert(recipe)
+        .select()
+        .single();
+      if (recipeError) throw recipeError;
+
+      const { error: deleteError } = await supabase
+        .from('recipe_pos_mappings')
+        .delete()
+        .eq('user_id', userId)
+        .eq('pos_menu_item_id', posItem.id);
+      if (deleteError) throw deleteError;
+
+      const { error: mappingError } = await supabase
+        .from('recipe_pos_mappings')
+        .insert({
+          user_id: userId,
+          recipe_id: createdRecipe.id,
+          pos_menu_item_id: posItem.id,
+          confidence_score: 1,
+          mapping_status: 'confirmed',
+        });
+      if (mappingError) throw mappingError;
+
+      return createdRecipe;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['recipes-with-ingredients'] });
+      qc.invalidateQueries({ queryKey: ['pos_menu_items_with_mappings'] });
+    },
+  });
+};
+
+// ─── Daily summaries ──────────────────────────────────────────────────────────
+
+interface DailySummary {
+  id: string;
+  user_id: string;
+  summary_text: string;
+  created_at: string;
+}
+
+export const useDailySummary = () =>
+  useQuery({
+    queryKey: ['daily_summary'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('daily_summaries')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      return (data as DailySummary | null);
+    },
+  });
 
 // ─── Recipe mutations ─────────────────────────────────────────────────────────
 
