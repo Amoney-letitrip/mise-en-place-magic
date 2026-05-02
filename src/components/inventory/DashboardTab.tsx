@@ -1,4 +1,5 @@
 import { StatusTag } from './StatusTag';
+import { WasteImpactCard } from './WasteImpactCard';
 import { fmtDate } from '@/lib/inventory-utils';
 import type { TabId } from '@/lib/types';
 import type { Database } from '@/integrations/supabase/types';
@@ -68,6 +69,9 @@ export const DashboardTab = ({
           <div className="text-xs text-muted-foreground">{expiredLots.length} expired · {expiringLots.length} expiring soon</div>
         </button>
       </div>
+
+      {/* Waste Impact */}
+      <WasteImpactCard />
 
       {/* Action List */}
       <div className="bg-card border border-border rounded-lg p-4 mb-4">

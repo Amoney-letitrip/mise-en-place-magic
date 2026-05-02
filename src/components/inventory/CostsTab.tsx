@@ -1,4 +1,5 @@
 import { StatusTag, Mono, SectionHead } from './StatusTag';
+import { WasteImpactCard } from './WasteImpactCard';
 import { fmtN } from '@/lib/inventory-utils';
 import type { Database } from '@/integrations/supabase/types';
 import type { TabId } from '@/lib/types';
@@ -72,6 +73,9 @@ export const CostsTab = ({ ingredients, recipes, setTab, expiredLots = [] }: Cos
           </div>
         </div>
       </div>
+
+      {/* Waste Impact */}
+      <WasteImpactCard />
 
       {/* Recipe Cost Breakdown */}
       <div className="bg-card border border-border rounded-lg overflow-hidden mb-3.5">
