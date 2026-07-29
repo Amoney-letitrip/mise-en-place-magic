@@ -29,26 +29,45 @@ const corsHeaders = {
 
 // ─── Signature verification helpers ───────────────────────────────────────────
 
+function constantTimeEqual(left: string, right: string): boolean {
+  if (left.length !== right.length) return false;
+  let mismatch = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    mismatch |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  }
+  return mismatch === 0;
+}
+
 async function verifySquare(req: Request, body: string): Promise<boolean> {
   const secret = Deno.env.get("SQUARE_WEBHOOK_SIGNATURE_KEY");
   if (!secret) return false;
   const sig = req.headers.get("x-square-hmacsha256-signature") || "";
   const url = req.url;
   const expected = await hmac("sha256", secret, url + body, "utf8", "base64");
-  return sig === expected;
+  return constantTimeEqual(sig, expected);
 }
 
 async function verifyClover(req: Request, body: string): Promise<boolean> {
-  // Clover uses a shared app secret
-  const secret = Deno.env.get("CLOVER_CLIENT_SECRET");
-  if (!secret) return false;
-  // Clover webhooks don't have a built-in signature — rely on payload validation
-  return body.length > 0 && !!secret;
+  const authCode = Deno.env.get("CLOVER_WEBHOOK_AUTH_CODE");
+  const supplied = req.headers.get("x-clover-auth") || "";
+  return body.length > 0 && !!authCode && constantTimeEqual(supplied, authCode);
 }
 
-async function verifyToast(_req: Request, body: string): Promise<boolean> {
-  // Toast uses a GUID-based shared secret in the payload header
-  return body.length > 0;
+async function verifyToast(req: Request, body: string): Promise<boolean> {
+  const secret = Deno.env.get("TOAST_WEBHOOK_SECRET");
+  const supplied = req.headers.get("toast-signature") || "";
+  if (!secret || !supplied) return false;
+
+  let timestamp = "";
+  try {
+    timestamp = String(JSON.parse(body)?.timestamp || "");
+  } catch {
+    return false;
+  }
+  if (!timestamp) return false;
+
+  const expected = await hmac("sha256", secret, body + timestamp, "utf8", "base64");
+  return constantTimeEqual(supplied, expected);
 }
 
 async function verifyLightspeed(req: Request, body: string): Promise<boolean> {
@@ -56,7 +75,7 @@ async function verifyLightspeed(req: Request, body: string): Promise<boolean> {
   if (!secret) return false;
   const sig = req.headers.get("x-lightspeed-signature") || "";
   const expected = await hmac("sha256", secret, body, "utf8", "hex");
-  return sig === `sha256=${expected}`;
+  return constantTimeEqual(sig, `sha256=${expected}`);
 }
 
 const VERIFIERS: Record<string, (req: Request, body: string) => Promise<boolean>> = {
@@ -112,7 +131,8 @@ function normaliseClover(payload: Record<string, unknown>): NormalisedLineItem[]
 
 function normaliseToast(payload: Record<string, unknown>): NormalisedLineItem[] {
   const event = payload as any;
-  const orders = Array.isArray(payload) ? payload : [event];
+  const details = event.details ?? event;
+  const orders = Array.isArray(details) ? details : [details];
 
   return orders.flatMap((order: any) =>
     (order.selections || []).map((sel: any) => ({
@@ -163,6 +183,12 @@ serve(async (req) => {
   }
 
   const body = await req.text();
+  if (body.length > 2_000_000) {
+    return new Response(JSON.stringify({ error: "Payload too large" }), {
+      status: 413,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
 
   // Verify signature
   const valid = await VERIFIERS[provider](req, body);
@@ -196,8 +222,11 @@ serve(async (req) => {
 
   // Look up the merchant_id from the webhook to find the correct user
   // For providers that send merchant info in the payload
+  const cloverMerchants = (payload as any).merchants;
   const merchantId = (payload as any).merchant_id
-    || (payload as any).merchants?.[0]?.id
+    || (payload as any).details?.restaurantGuid
+    || req.headers.get("toast-restaurant-external-id")
+    || (cloverMerchants && typeof cloverMerchants === "object" ? Object.keys(cloverMerchants)[0] : null)
     || url.searchParams.get("merchant_id");
 
   let userId: string | null = null;
@@ -223,7 +252,11 @@ serve(async (req) => {
   // Insert sales records in the schema the frontend actually reads.
   // POS rows are flagged because inventory deduction must happen through the
   // same stock checks used by manual sales, not by silently trusting a webhook.
-  const salesRows = lineItems.map((item) => ({
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body));
+  const eventFingerprint = Array.from(new Uint8Array(digest))
+    .map(byte => byte.toString(16).padStart(2, "0"))
+    .join("");
+  const salesRows = lineItems.map((item, index) => ({
     user_id: userId,
     item: item.itemName,
     qty: Math.max(1, Math.round(item.quantity)),
@@ -231,11 +264,16 @@ serve(async (req) => {
     reason: `POS sync from ${provider}; review recipe match before deducting inventory`,
     source: `POS:${provider}`,
     created_at: item.occurredAt,
+    external_sale_id: `${provider}:${item.posOrderId && item.posOrderId !== "unknown" ? item.posOrderId : eventFingerprint}:${index}`,
   }));
 
   const { error: insertError, count } = await supabase
     .from("sales")
-    .insert(salesRows, { count: "exact" });
+    .upsert(salesRows, {
+      onConflict: "user_id,external_sale_id",
+      ignoreDuplicates: true,
+      count: "exact",
+    });
 
   if (insertError) {
     console.error("Sales insert error:", insertError);

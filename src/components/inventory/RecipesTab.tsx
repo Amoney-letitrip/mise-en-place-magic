@@ -132,37 +132,66 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
   const saveScannedRecipes = useCallback(async () => {
     try {
       const userId = await getUserId();
-      const toSave = scannedRecipes.filter((_, i) => !removedIndices.has(i));
+      const toSave = scannedRecipes
+        .map((recipe, index) => ({ recipe, index }))
+        .filter(({ index }) => !removedIndices.has(index));
 
       // Check for existing recipes by name
       const existingNames = new Set(recipes.map(r => r.name.toLowerCase().trim()));
-      const filtered = toSave.filter(r => !existingNames.has(r.name.toLowerCase().trim()));
+      const filtered = toSave.filter(({ recipe }) => !existingNames.has(recipe.name.toLowerCase().trim()));
       const skipped = toSave.length - filtered.length;
       if (skipped > 0) toast.info(`Skipped ${skipped} recipe${skipped > 1 ? 's' : ''} that already exist`);
 
-      for (const r of filtered) {
-        const { data: recipe, error: re } = await supabase
-          .from('recipes')
-          .insert({ name: r.name, status: 'draft', user_id: userId })
-          .select()
-          .single();
-        if (re || !recipe) continue;
-        const ings = (r.ingredients || []).map((ing) => ({
-          recipe_id: recipe.id,
-          name: ing.name,
-          qty: ing.qty,
-          unit: ing.unit,
-          confidence: 0.75,
-          user_id: userId,
-        }));
-        if (ings.length > 0) await supabase.from('recipe_ingredients').insert(ings);
+      let saved = 0;
+      const failedRecipes: ScannedRecipe[] = [];
+      for (const { recipe: scannedRecipe } of filtered) {
+        let createdRecipeId: string | null = null;
+        try {
+          const { data: recipe, error: recipeError } = await supabase
+            .from('recipes')
+            .insert({ name: scannedRecipe.name, status: 'draft', user_id: userId })
+            .select()
+            .single();
+          if (recipeError || !recipe) throw recipeError || new Error('Recipe was not created');
+          createdRecipeId = recipe.id;
+
+          const ingredientsToSave = (scannedRecipe.ingredients || []).map((ingredient) => ({
+            recipe_id: recipe.id,
+            name: ingredient.name,
+            qty: ingredient.qty,
+            unit: ingredient.unit,
+            confidence: 0.75,
+            user_id: userId,
+          }));
+          if (ingredientsToSave.length > 0) {
+            const { error: ingredientError } = await supabase
+              .from('recipe_ingredients')
+              .insert(ingredientsToSave);
+            if (ingredientError) throw ingredientError;
+          }
+          saved++;
+        } catch (error) {
+          if (createdRecipeId) {
+            await supabase.from('recipes').delete().eq('id', createdRecipeId);
+          }
+          console.error('Scanned recipe import failed:', error);
+          failedRecipes.push(scannedRecipe);
+        }
       }
+
       qc.invalidateQueries({ queryKey: ['recipes-with-ingredients'] });
-      setMenuScanState('done');
-      setShowScanUI(false);
-      setScannedRecipes([]);
-      setRemovedIndices(new Set());
-      toast.success(`${filtered.length} draft recipes created — verify them to start tracking inventory`);
+      if (failedRecipes.length > 0) {
+        setScannedRecipes(failedRecipes);
+        setRemovedIndices(new Set());
+        setMenuScanState('review');
+        toast.error(`${failedRecipes.length} recipe${failedRecipes.length === 1 ? '' : 's'} failed to save. ${saved} saved successfully.`);
+      } else {
+        setMenuScanState('done');
+        setShowScanUI(false);
+        setScannedRecipes([]);
+        setRemovedIndices(new Set());
+        toast.success(`${saved} draft recipe${saved === 1 ? '' : 's'} created — verify them to start tracking inventory`);
+      }
     } catch (err) {
       console.error(err);
       toast.error('Failed to save recipes');
@@ -393,11 +422,11 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
           />
 
           {recipes.length > 0 && !showScanUI && (
-            <div className="border-b border-border mb-4 flex gap-5">
-              <button onClick={() => setSubTab('list')} className={`pb-2 text-[13px] font-semibold border-b-2 transition-colors ${subTab === 'list' ? 'text-primary border-primary' : 'text-muted-foreground border-transparent hover:text-foreground'}`}>
+            <div className="border-b border-border mb-4 flex gap-5" role="group" aria-label="Recipe views">
+              <button aria-pressed={subTab === 'list'} onClick={() => setSubTab('list')} className={`pb-2 text-[13px] font-semibold border-b-2 transition-colors ${subTab === 'list' ? 'text-primary border-primary' : 'text-muted-foreground border-transparent hover:text-foreground'}`}>
                 Recipe List
               </button>
-              <button onClick={() => setSubTab('calibration')} className={`pb-2 text-[13px] font-semibold border-b-2 transition-colors ${subTab === 'calibration' ? 'text-primary border-primary' : 'text-muted-foreground border-transparent hover:text-foreground'}`}>
+              <button aria-pressed={subTab === 'calibration'} onClick={() => setSubTab('calibration')} className={`pb-2 text-[13px] font-semibold border-b-2 transition-colors ${subTab === 'calibration' ? 'text-primary border-primary' : 'text-muted-foreground border-transparent hover:text-foreground'}`}>
                 Calibration
               </button>
             </div>
@@ -627,6 +656,7 @@ export const RecipesTab = ({ recipes, ingredients, fefo, draftRecipes }: Recipes
                           <Button
                             variant={r.status === 'draft' ? 'default' : 'outline'}
                             size="sm"
+                            aria-label={`${r.status === 'draft' ? 'Review' : 'Edit'} ${r.name}`}
                             className={r.status === 'draft' ? 'bg-orange hover:bg-orange/90' : ''}
                             onClick={e => { e.stopPropagation(); setSelectedRId(r.id); }}
                           >

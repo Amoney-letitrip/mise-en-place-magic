@@ -1,13 +1,25 @@
 import { useState, useMemo, useCallback } from 'react';
-import { useIngredients, useLots, useSales, useRecipesWithIngredients, useVendors, useUpdateIngredient, useUpdateLot, useCreateLot, useBulkUpdateIngredients } from '@/hooks/use-inventory-data';
+import { useSearchParams } from 'react-router-dom';
+import { useIngredients, useLots, useSales, useRecipesWithIngredients, useVendors, useUpdateIngredient, useUpdateLot, useCreateLot, useBulkUpdateIngredients, useRecordWaste } from '@/hooks/use-inventory-data';
 import { computeForecast, diffDays } from '@/lib/inventory-utils';
 import type { TabId } from '@/lib/types';
 import { toast } from 'sonner';
 
 const SALES_LOOKBACK_DAYS = 7;
+const TAB_IDS: TabId[] = ['dashboard', 'overview', 'inventory', 'orders', 'sales', 'recipes', 'costs'];
 
 export const useAppState = () => {
-  const [tab, setTab] = useState<TabId>('dashboard');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedTab = searchParams.get('tab');
+  const tab: TabId = TAB_IDS.includes(requestedTab as TabId) ? requestedTab as TabId : 'dashboard';
+  const setTab = useCallback((nextTab: TabId) => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (nextTab === 'dashboard') nextParams.delete('tab');
+    else nextParams.set('tab', nextTab);
+    nextParams.delete('pos_connected');
+    nextParams.delete('pos_error');
+    setSearchParams(nextParams);
+  }, [searchParams, setSearchParams]);
   const [fefo, setFefo] = useState(true);
   const [targetDays, setTargetDays] = useState(7);
 
@@ -15,15 +27,16 @@ export const useAppState = () => {
   const { data: lots = [], isLoading: loadingLots, error: errorLots } = useLots();
   const { data: sales = [], isLoading: loadingSales, error: errorSales } = useSales();
   const { data: recipes = [], isLoading: loadingRecipes, error: errorRecipes } = useRecipesWithIngredients();
-  const { data: vendors = [] } = useVendors();
+  const { data: vendors = [], isLoading: loadingVendors, error: errorVendors } = useVendors();
 
   const updateIngredient = useUpdateIngredient();
   const updateLot = useUpdateLot();
   const createLot = useCreateLot();
   const bulkUpdateIngredients = useBulkUpdateIngredients();
+  const recordWaste = useRecordWaste();
 
-  const isLoading = loadingIngredients || loadingLots || loadingSales || loadingRecipes;
-  const hasError = !!(errorIngredients || errorLots || errorSales || errorRecipes);
+  const isLoading = loadingIngredients || loadingLots || loadingSales || loadingRecipes || loadingVendors;
+  const hasError = !!(errorIngredients || errorLots || errorSales || errorRecipes || errorVendors);
 
   const expiredLots = useMemo(() => {
     const now = new Date();
@@ -135,16 +148,13 @@ export const useAppState = () => {
   const logWaste = useCallback(async (lot: typeof lots[0]) => {
     const ing = ingredients.find(i => i.id === lot.ingredient_id);
     if (!ing) return;
-    await updateIngredient.mutateAsync({
-      id: ing.id,
-      updates: { current_stock: Math.max(0, ing.current_stock - lot.quantity_remaining) },
-    });
-    await updateLot.mutateAsync({
-      id: lot.id,
-      updates: { quantity_remaining: 0 },
-    });
-    toast.success('Waste logged');
-  }, [ingredients, updateIngredient, updateLot]);
+    try {
+      await recordWaste.mutateAsync(lot.id);
+      toast.success('Waste logged');
+    } catch {
+      toast.error('Waste could not be logged. Please try again.');
+    }
+  }, [ingredients, recordWaste]);
 
   return {
     tab, setTab, fefo, setFefo, targetDays, setTargetDays,

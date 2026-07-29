@@ -322,7 +322,8 @@ export const OnboardingWizard = ({ restaurantName: initialName }: OnboardingWiza
         // Seed demo diner data
         // 1. Create vendors
         for (const v of SEED_VENDORS) {
-          await supabase.from('vendors').insert({ ...v, user_id: userId });
+          const { error } = await supabase.from('vendors').insert({ ...v, user_id: userId });
+          if (error) throw error;
         }
 
         // 2. Generate sales first to compute remaining stock
@@ -332,12 +333,13 @@ export const OnboardingWizard = ({ restaurantName: initialName }: OnboardingWiza
         const ingredientMap = new Map<string, string>();
         for (const ing of SEED_INGREDIENTS) {
           const remaining = computeRemainingStock(ing.current_stock, ing.name, salesData);
-          const { data: created } = await supabase
+          const { data: created, error } = await supabase
             .from('ingredients')
             .insert({ ...ing, current_stock: remaining, user_id: userId })
             .select('id')
             .single();
-          if (created) ingredientMap.set(ing.name, created.id);
+          if (error) throw error;
+          ingredientMap.set(ing.name, created.id);
         }
 
         // 4. Create lots (1 per ingredient, received 7 days ago)
@@ -350,7 +352,7 @@ export const OnboardingWizard = ({ restaurantName: initialName }: OnboardingWiza
           const expiresAt = ing.is_perishable && ing.shelf_life_days
             ? new Date(sevenDaysAgo.getTime() + ing.shelf_life_days * 86400000).toISOString()
             : null;
-          await supabase.from('lots').insert({
+          const { error } = await supabase.from('lots').insert({
             ingredient_id: ingId,
             lot_label: `Opening-${ing.name.replace(/\s+/g, '-')}`,
             received_at: sevenDaysAgo.toISOString(),
@@ -359,16 +361,17 @@ export const OnboardingWizard = ({ restaurantName: initialName }: OnboardingWiza
             quantity_remaining: remaining,
             user_id: userId,
           });
+          if (error) throw error;
         }
 
         // 5. Create recipes (all verified)
         for (const r of SEED_RECIPES) {
-          const { data: recipe } = await supabase
+          const { data: recipe, error } = await supabase
             .from('recipes')
             .insert({ name: r.name, status: 'verified', verified_by: 'Manager', verified_date: new Date().toLocaleDateString(), menu_price: r.menu_price, user_id: userId })
             .select('id')
             .single();
-          if (!recipe) continue;
+          if (error) throw error;
           const ings = r.ingredients.map(ri => ({
             recipe_id: recipe.id,
             name: ri.name,
@@ -378,19 +381,21 @@ export const OnboardingWizard = ({ restaurantName: initialName }: OnboardingWiza
             user_id: userId,
             ingredient_id: ingredientMap.get(ri.name) || null,
           }));
-          await supabase.from('recipe_ingredients').insert(ings);
+          const { error: ingredientsError } = await supabase.from('recipe_ingredients').insert(ings);
+          if (ingredientsError) throw ingredientsError;
         }
 
         // 6. Insert sales
         // Batch insert in chunks of 50
         for (let i = 0; i < salesData.length; i += 50) {
-          await supabase.from('sales').insert(salesData.slice(i, i + 50));
+          const { error } = await supabase.from('sales').insert(salesData.slice(i, i + 50));
+          if (error) throw error;
         }
       } else {
         // Normal flow: save user-scanned data
         const ingredientMap = new Map<string, string>();
         for (const item of stockItems) {
-          const { data: ing } = await supabase
+          const { data: ing, error } = await supabase
             .from('ingredients')
             .insert({
               name: item.name,
@@ -403,15 +408,16 @@ export const OnboardingWizard = ({ restaurantName: initialName }: OnboardingWiza
             })
             .select()
             .single();
-          if (ing) ingredientMap.set(item.name.toLowerCase().trim(), ing.id);
+          if (error) throw error;
+          ingredientMap.set(item.name.toLowerCase().trim(), ing.id);
         }
         for (const r of kept) {
-          const { data: recipe } = await supabase
+          const { data: recipe, error } = await supabase
             .from('recipes')
             .insert({ name: r.name, status: 'draft', menu_price: r.menu_price || 0, user_id: userId })
             .select()
             .single();
-          if (!recipe) continue;
+          if (error) throw error;
           const ings = (r.ingredients || []).map((ing) => ({
             recipe_id: recipe.id,
             name: ing.name,
@@ -421,7 +427,10 @@ export const OnboardingWizard = ({ restaurantName: initialName }: OnboardingWiza
             user_id: userId,
             ingredient_id: ingredientMap.get(ing.name.toLowerCase().trim()) || null,
           }));
-          if (ings.length > 0) await supabase.from('recipe_ingredients').insert(ings);
+          if (ings.length > 0) {
+            const { error: ingredientsError } = await supabase.from('recipe_ingredients').insert(ings);
+            if (ingredientsError) throw ingredientsError;
+          }
         }
       }
 
@@ -767,7 +776,7 @@ export const OnboardingWizard = ({ restaurantName: initialName }: OnboardingWiza
           <div className="bg-card border border-border rounded-2xl p-8 shadow-sm animate-fade-up">
             <h2 className="text-xl font-extrabold text-foreground text-center mb-2">Connect Your POS</h2>
             <p className="text-muted-foreground text-sm text-center mb-6">
-              Link your point-of-sale system to automatically track sales and deduct inventory.
+              Link your point-of-sale system to import supported sale events for recipe matching and review.
             </p>
             <div className="grid gap-2.5 mb-6">
               {POS_SYSTEMS.map(pos => (

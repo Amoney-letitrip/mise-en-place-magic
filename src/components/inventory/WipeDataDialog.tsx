@@ -48,10 +48,12 @@ export const WipeDataDialog = () => {
         </AlertDialogHeader>
 
         <div className="space-y-2">
-          <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+          <label htmlFor="wipe-confirmation" className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
             Type WIPE to confirm
           </label>
           <input
+            id="wipe-confirmation"
+            name="wipe-confirmation"
             value={confirmText}
             onChange={e => setConfirmText(e.target.value)}
             className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/20"

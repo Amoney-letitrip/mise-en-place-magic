@@ -1,17 +1,31 @@
-import { calculateWasteImpact, DEMO_WASTE_IMPACT_INPUT } from '@/lib/waste-impact';
+import { calculateWasteImpact } from '@/lib/waste-impact';
 import type { WasteImpactInput } from '@/lib/waste-impact';
 
 interface WasteImpactCardProps {
-  // Pass real data when available; omit to use demo data.
+  // Pass measured waste-history data when it becomes available.
   data?: WasteImpactInput;
   // Optional period label, e.g. "this month"
   period?: string;
 }
 
 export const WasteImpactCard = ({
-  data = DEMO_WASTE_IMPACT_INPUT,
+  data,
   period = 'this month',
 }: WasteImpactCardProps) => {
+  if (!data) {
+    return (
+      <div className="bg-card border border-border rounded-lg p-4">
+        <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
+          🌱 Waste Impact
+        </div>
+        <div className="font-semibold text-sm text-foreground">No measured waste impact yet</div>
+        <p className="text-xs text-muted-foreground mt-1">
+          Waste history is not stored yet, so savings and climate estimates are intentionally hidden.
+        </p>
+      </div>
+    );
+  }
+
   const result = calculateWasteImpact(data);
 
   return (

@@ -24,6 +24,7 @@
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -34,6 +35,7 @@ const corsHeaders = {
 const SUPPORTED_MEDIA_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
 const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
 const MAX_BASE64_CHARS = 12_000_000;
+const MAX_TOTAL_BASE64_CHARS = 24_000_000;
 
 type GeminiPart =
   | { type: "text"; text: string }
@@ -120,6 +122,26 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
 
   try {
+    const authHeader = req.headers.get("Authorization") ?? "";
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
+    if (!authHeader.startsWith("Bearer ") || !supabaseUrl || !supabaseAnonKey) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
     if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY not configured");
     const geminiModel = Deno.env.get("GEMINI_MODEL") || DEFAULT_GEMINI_MODEL;
@@ -137,6 +159,7 @@ serve(async (req) => {
 
     // Cap at 10 files per request
     const fileSlice = files.slice(0, 10);
+    let totalBase64Chars = 0;
     for (const file of fileSlice) {
       if (!SUPPORTED_MEDIA_TYPES.has(file.mediaType)) {
         return new Response(
@@ -147,6 +170,13 @@ serve(async (req) => {
       if (typeof file.base64 !== "string" || file.base64.length > MAX_BASE64_CHARS) {
         return new Response(
           JSON.stringify({ error: "One invoice file is too large to scan. Upload a smaller image or PDF." }),
+          { status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      totalBase64Chars += file.base64.length;
+      if (totalBase64Chars > MAX_TOTAL_BASE64_CHARS) {
+        return new Response(
+          JSON.stringify({ error: "The combined invoice upload is too large. Scan fewer files at a time." }),
           { status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
@@ -181,6 +211,7 @@ serve(async (req) => {
           generationConfig: {
             temperature: 0.2,
             response_mime_type: "application/json",
+            maxOutputTokens: 8192,
           },
         }),
       }
@@ -217,8 +248,8 @@ serve(async (req) => {
       if (!parsed?.ingredients || !Array.isArray(parsed.ingredients)) {
         throw new Error("Missing ingredients array");
       }
-    } catch (e) {
-      console.error("Failed to parse AI response:", raw.slice(0, 500));
+    } catch {
+      console.error("Failed to parse AI invoice response");
       return new Response(
         JSON.stringify({ error: "AI returned invalid format. Try scanning again or use a clearer image." }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -226,18 +257,21 @@ serve(async (req) => {
     }
 
     // Sanitise and coerce numeric fields
-    const sanitised = parsed.ingredients.map((item: unknown) => {
+    const sanitised = parsed.ingredients.slice(0, 500).map((item: unknown) => {
       const i = item as Record<string, unknown>;
+      const quantity = Math.max(0, Math.min(1_000_000, parseFloat(String(i.quantity || 1)) || 1));
+      const unitCost = Math.max(0, Math.min(1_000_000, parseFloat(String(i.cost_per_unit || 0)) || 0));
+      const totalCost = Math.max(0, Math.min(100_000_000, parseFloat(String(i.total_cost || 0)) || 0));
       return {
-        name: String(i.name || "Unknown"),
-        quantity: parseFloat(String(i.quantity || 1)) || 1,
-        unit: String(i.unit || "each"),
-        cost_per_unit: parseFloat(String(i.cost_per_unit || 0)) || 0,
-        total_cost: parseFloat(String(i.total_cost || 0)) || 0,
-        ...(i.vendor_name ? { vendor_name: String(i.vendor_name) } : {}),
-        ...(i.purchase_date ? { purchase_date: String(i.purchase_date) } : {}),
-        ...(i.category ? { category: String(i.category) } : {}),
-        ...(i.notes ? { notes: String(i.notes) } : {}),
+        name: String(i.name || "Unknown").trim().slice(0, 200),
+        quantity,
+        unit: String(i.unit || "each").trim().slice(0, 30),
+        cost_per_unit: unitCost,
+        total_cost: totalCost,
+        ...(i.vendor_name ? { vendor_name: String(i.vendor_name).trim().slice(0, 200) } : {}),
+        ...(i.purchase_date ? { purchase_date: String(i.purchase_date).trim().slice(0, 10) } : {}),
+        ...(i.category ? { category: String(i.category).trim().slice(0, 50) } : {}),
+        ...(i.notes ? { notes: String(i.notes).trim().slice(0, 500) } : {}),
       };
     });
 

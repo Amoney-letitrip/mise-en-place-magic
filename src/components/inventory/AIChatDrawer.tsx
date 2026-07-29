@@ -161,8 +161,10 @@ export const AIChatDrawer = ({
   return (
     <div
       className={`fixed inset-0 z-50 transition-opacity duration-200 ${open ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
-      aria-modal="true"
-      role="dialog"
+      aria-hidden={!open}
+      aria-modal={open ? 'true' : undefined}
+      inert={open ? undefined : true}
+      role={open ? 'dialog' : undefined}
       aria-label="Shift Assistant"
     >
       {/* Backdrop */}
