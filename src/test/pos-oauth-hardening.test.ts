@@ -43,6 +43,7 @@ describe("POS OAuth hardening", () => {
     expect(callback).toContain("state_already_used");
     expect(callback).toContain("state_expired");
     expect(callback).toContain(".is(\"used_at\", null)");
+    expect(callback).toContain("?tab=sales&");
   });
 
   it("supports app-supplied POS credentials without keeping the secret after callback consumption", () => {

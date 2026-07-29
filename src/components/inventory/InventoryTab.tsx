@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { StatusTag, StockBar, FreshBadge, Mono, SectionHead } from './StatusTag';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { diffDays, fmtDate, fmtN, buildCycleList, DISCREPANCY_REASONS } from '@/lib/inventory-utils';
 import type { Database } from '@/integrations/supabase/types';
 import { LotsModal } from './LotsModal';
@@ -31,7 +32,7 @@ interface InventoryTabProps {
   expiredLots: Lot[];
   lowItems: Ingredient[];
   logWaste: (lot: Lot) => void;
-  onUpdateIngredients?: (updates: Array<{ id: string; current_stock: number }>) => void;
+  onUpdateIngredients?: (updates: Array<{ id: string; current_stock: number }>) => Promise<void>;
   setTab?: (tab: TabId) => void;
   vendors?: Vendor[];
 }
@@ -44,9 +45,12 @@ export const InventoryTab = ({
   const [lotsModal, setLotsModal] = useState<Ingredient | null>(null);
   const [cycleItems, setCycleItems] = useState<any[] | null>(null);
   const [cycleSubmitted, setCycleSubmitted] = useState(false);
+  const [submittingCount, setSubmittingCount] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Ingredient | null>(null);
   const [showAddIng, setShowAddIng] = useState(false);
   const [ingForm, setIngForm] = useState(EMPTY_ING_FORM);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showAllExpiredLots, setShowAllExpiredLots] = useState(false);
   const deleteIngredient = useDeleteIngredient();
   const createIngredient = useCreateIngredient();
 
@@ -89,21 +93,32 @@ export const InventoryTab = ({
     setSubTab('count');
   };
 
-  const submitCount = () => {
+  const submitCount = async () => {
     if (!cycleItems) return;
     const updates: Array<{ id: string; current_stock: number }> = [];
     cycleItems.forEach(item => {
       if (item.counted == null || item.counted === '') return;
-      const diff = parseFloat(item.counted) - item.systemQty;
-      if (diff === 0) return;
       const ing = ingredients.find(i => i.id === item.ingredientId);
       if (!ing) return;
-      updates.push({ id: ing.id, current_stock: Math.max(0, ing.current_stock + diff) });
+      updates.push({ id: ing.id, current_stock: Math.max(0, parseFloat(item.counted) || 0) });
     });
-    if (updates.length > 0 && onUpdateIngredients) {
-      onUpdateIngredients(updates);
+    if (updates.length === 0) {
+      setCycleSubmitted(true);
+      toast.success('Count complete — no stock changes needed');
+      return;
     }
-    setCycleSubmitted(true);
+    if (!onUpdateIngredients) return;
+
+    setSubmittingCount(true);
+    try {
+      await onUpdateIngredients(updates);
+      setCycleSubmitted(true);
+      toast.success('Count submitted — inventory and lots reconciled');
+    } catch {
+      toast.error('Count could not be saved. Review your entries and try again.');
+    } finally {
+      setSubmittingCount(false);
+    }
   };
 
   const ingLots = (ingId: string) =>
@@ -116,6 +131,16 @@ export const InventoryTab = ({
         }
         return new Date(a.received_at).getTime() - new Date(b.received_at).getTime();
       });
+
+  const filteredIngredients = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return ingredients;
+    return ingredients.filter(ingredient =>
+      [ingredient.name, ingredient.vendor, ingredient.storage_type, ingredient.unit]
+        .filter(Boolean)
+        .some(value => String(value).toLowerCase().includes(query))
+    );
+  }, [ingredients, searchQuery]);
 
   const handleDeleteConfirm = async () => {
     if (!deleteTarget) return;
@@ -145,14 +170,16 @@ export const InventoryTab = ({
       />
 
       {/* Sub-tabs */}
-      <div className="border-b border-border mb-4 flex gap-5">
+      <div className="border-b border-border mb-4 flex gap-5" role="group" aria-label="Inventory views">
         <button
+          aria-pressed={subTab === 'list'}
           onClick={() => setSubTab('list')}
           className={`pb-2 text-[13px] font-semibold border-b-2 transition-colors ${subTab === 'list' ? 'text-primary border-primary' : 'text-muted-foreground border-transparent hover:text-foreground'}`}
         >
           Stock List
         </button>
         <button
+          aria-pressed={subTab === 'count'}
           onClick={() => { if (!cycleItems) startCount(); else setSubTab('count'); }}
           className={`pb-2 text-[13px] font-semibold border-b-2 transition-colors flex items-center gap-1.5 ${subTab === 'count' ? 'text-primary border-primary' : 'text-muted-foreground border-transparent hover:text-foreground'}`}
         >
@@ -160,6 +187,7 @@ export const InventoryTab = ({
           {cycleSubmitted && <StatusTag variant="green">Done ✓</StatusTag>}
         </button>
         <button
+          aria-pressed={subTab === 'setup'}
           onClick={() => setSubTab('setup')}
           className={`pb-2 text-[13px] font-semibold border-b-2 transition-colors flex items-center gap-1.5 ${subTab === 'setup' ? 'text-primary border-primary' : 'text-muted-foreground border-transparent hover:text-foreground'}`}
         >
@@ -178,24 +206,51 @@ export const InventoryTab = ({
           )}
 
           {expiredLots.length > 0 && (
-            <div className="bg-red-50 border border-red-300 rounded-lg px-3.5 py-2.5 mb-3 text-[13px] text-red-700 flex justify-between items-center">
+            <div className="bg-red-50 border border-red-300 rounded-lg px-3.5 py-2.5 mb-3 text-[13px] text-red-700 flex flex-col gap-2 sm:flex-row sm:justify-between sm:items-center">
               <span>❌ {expiredLots.length} expired lot{expiredLots.length > 1 ? 's' : ''} — log waste to remove</span>
-              <div className="flex gap-1.5">
-                {expiredLots.map(lot => {
+              <div className="flex flex-wrap gap-1.5">
+                {expiredLots.slice(0, showAllExpiredLots ? undefined : 3).map(lot => {
                   const ing = ingredients.find(i => i.id === lot.ingredient_id);
                   return (
-                    <Button key={lot.id} variant="destructive" size="sm" onClick={() => logWaste(lot)}>
-                      Log {ing?.name} waste
+                    <Button
+                      key={lot.id}
+                      variant="destructive"
+                      size="sm"
+                      aria-label={`Log ${ing?.name || 'expired lot'} as waste`}
+                      onClick={() => logWaste(lot)}
+                    >
+                      Log {ing?.name || 'expired lot'}
                     </Button>
                   );
                 })}
+                {expiredLots.length > 3 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    aria-expanded={showAllExpiredLots}
+                    onClick={() => setShowAllExpiredLots(current => !current)}
+                  >
+                    {showAllExpiredLots ? 'Show fewer' : `Show ${expiredLots.length - 3} more`}
+                  </Button>
+                )}
               </div>
             </div>
           )}
 
+          <div className="mb-3">
+            <Input
+              type="search"
+              aria-label="Search inventory"
+              placeholder="Search ingredients, vendors, or storage…"
+              value={searchQuery}
+              onChange={event => setSearchQuery(event.target.value)}
+              className="max-w-sm"
+            />
+          </div>
+
           {/* ── Mobile: ingredient cards (no horizontal scrolling) ── */}
           <div className="md:hidden space-y-2">
-            {ingredients.map(ing => {
+            {filteredIngredients.map(ing => {
               const fc = forecasts[ing.id];
               const iLots = ingLots(ing.id);
               const worstLot = iLots.find(l => l.expires_at && diffDays(new Date(l.expires_at), now) <= 2);
@@ -249,6 +304,7 @@ export const InventoryTab = ({
                     {iLots.length > 0 && (
                       <button
                         onClick={() => setLotsModal(ing)}
+                        aria-label={`View lots for ${ing.name}`}
                         className="text-[12px] font-medium text-foreground border border-border rounded-md px-2.5 py-1.5 hover:bg-muted transition-colors"
                       >
                         {iLots.length} lot{iLots.length !== 1 ? 's' : ''}
@@ -259,6 +315,7 @@ export const InventoryTab = ({
                     )}
                     <button
                       onClick={() => setDeleteTarget(ing)}
+                      aria-label={`Delete ${ing.name}`}
                       className="ml-auto text-muted-foreground/40 hover:text-destructive transition-colors p-2"
                       title="Delete ingredient"
                     >
@@ -287,7 +344,7 @@ export const InventoryTab = ({
                   </tr>
                 </thead>
                 <tbody>
-                  {ingredients.map(ing => {
+                  {filteredIngredients.map(ing => {
                     const fc = forecasts[ing.id];
                     const iLots = ingLots(ing.id);
                     const worstLot = iLots.find(l => l.expires_at && diffDays(new Date(l.expires_at), now) <= 2);
@@ -341,6 +398,7 @@ export const InventoryTab = ({
                           {iLots.length > 0 ? (
                             <button
                               onClick={() => setLotsModal(ing)}
+                              aria-label={`View lots for ${ing.name}`}
                               className="text-[11px] font-medium text-foreground border border-border rounded-md px-2 py-0.5 hover:bg-muted transition-colors"
                             >
                               {iLots.length} lot{iLots.length !== 1 ? 's' : ''}
@@ -354,6 +412,7 @@ export const InventoryTab = ({
                             )}
                             <button
                               onClick={() => setDeleteTarget(ing)}
+                              aria-label={`Delete ${ing.name}`}
                               className="text-muted-foreground/50 hover:text-destructive transition-colors p-1"
                               title="Delete ingredient"
                             >
@@ -368,6 +427,11 @@ export const InventoryTab = ({
               </table>
             </div>
           </div>
+          {filteredIngredients.length === 0 && (
+            <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+              No ingredients match “{searchQuery.trim()}”.
+            </div>
+          )}
         </>
       )}
 
@@ -381,8 +445,8 @@ export const InventoryTab = ({
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={startCount}>↻</Button>
               {!cycleSubmitted && (
-                <Button size="sm" disabled={computedCycle.every(i => i.counted === null)} onClick={submitCount}>
-                  Submit
+                <Button size="sm" disabled={submittingCount || computedCycle.every(i => i.counted === null)} onClick={submitCount}>
+                  {submittingCount ? 'Saving…' : 'Submit'}
                 </Button>
               )}
             </div>
@@ -422,6 +486,7 @@ export const InventoryTab = ({
                     <input
                       type="number"
                       inputMode="decimal"
+                      aria-label={`Physical count for ${item.name}`}
                       className={`w-full text-right px-3 py-2 border rounded-md text-base bg-card focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary ${hasDiff ? 'border-warning' : 'border-border'}`}
                       placeholder="—"
                       disabled={cycleSubmitted}
@@ -437,6 +502,7 @@ export const InventoryTab = ({
                       {diff! > 0 ? '+' : ''}{diff} {item.unit}
                     </Mono>
                     <select
+                      aria-label={`Variance reason for ${item.name}`}
                       className="flex-1 text-sm border border-border rounded-md px-2 py-2 bg-card"
                       value={item.reason || ''}
                       disabled={cycleSubmitted}
@@ -460,8 +526,8 @@ export const InventoryTab = ({
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" onClick={startCount}>↻ Refresh</Button>
                 {!cycleSubmitted && (
-                  <Button size="sm" disabled={computedCycle.every(i => i.counted === null)} onClick={submitCount}>
-                    Submit Count
+                  <Button size="sm" disabled={submittingCount || computedCycle.every(i => i.counted === null)} onClick={submitCount}>
+                    {submittingCount ? 'Saving…' : 'Submit Count'}
                   </Button>
                 )}
               </div>
@@ -502,6 +568,7 @@ export const InventoryTab = ({
                       <td className="px-3.5 py-2.5">
                         <input
                           type="number"
+                          aria-label={`Physical count for ${item.name}`}
                           className={`w-20 text-right px-2 py-1.5 border rounded-md text-[13px] bg-card focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary ${hasDiff ? 'border-warning' : 'border-border'}`}
                           placeholder="Count…"
                           disabled={cycleSubmitted}
@@ -519,6 +586,7 @@ export const InventoryTab = ({
                       <td className="px-3.5 py-2.5">
                         {hasDiff && (
                           <select
+                            aria-label={`Variance reason for ${item.name}`}
                             className="text-xs border border-border rounded-md px-2 py-1 bg-card"
                             value={item.reason || ''}
                             disabled={cycleSubmitted}
@@ -555,10 +623,9 @@ export const InventoryTab = ({
             <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3.5">
               <div className="font-bold text-[13px] text-emerald-700 mb-2">What happens on submit</div>
               <ul className="text-xs text-emerald-700 leading-relaxed pl-4 list-disc">
-                <li>Inventory totals updated</li>
-                <li>Lots reconciled ({fefo ? 'FEFO' : 'FIFO'})</li>
-                <li>Synthetic lot added for increases</li>
-                <li>Variances feed calibration</li>
+                <li>Inventory totals update atomically</li>
+                <li>Lots reconcile in {fefo ? 'FEFO' : 'FIFO'} order</li>
+                <li>Count-adjustment lots cover increases</li>
               </ul>
             </div>
           </div>

@@ -70,7 +70,7 @@ function allowedOrigins(): Set<string> {
 }
 
 function redirectWith(origin: string, key: "pos_error" | "pos_connected", value: string): Response {
-  return Response.redirect(`${origin}/?${key}=${encodeURIComponent(value)}`, 302);
+  return Response.redirect(`${origin}/?tab=sales&${key}=${encodeURIComponent(value)}`, 302);
 }
 
 serve(async (req) => {
@@ -166,8 +166,7 @@ serve(async (req) => {
     });
 
     if (!tokenRes.ok) {
-      const body = await tokenRes.text();
-      console.error(`Token exchange failed for ${posType}:`, tokenRes.status, body);
+      console.error(`Token exchange failed for ${posType}:`, tokenRes.status);
       return redirectWith(redirectOrigin, "pos_error", "token_exchange_failed");
     }
 
@@ -191,7 +190,7 @@ serve(async (req) => {
   }
 
   if (!accessToken) {
-    console.error("No access_token in response from", posType, tokenData);
+    console.error("No access_token in response from", posType);
     return redirectWith(redirectOrigin, "pos_error", "no_access_token");
   }
 
@@ -214,7 +213,6 @@ serve(async (req) => {
       status: "connected",
       error_message: null,
       connected_at: new Date().toISOString(),
-      metadata: { raw: tokenData },
     }, { onConflict: "user_id,pos_type" });
 
   if (dbError) {

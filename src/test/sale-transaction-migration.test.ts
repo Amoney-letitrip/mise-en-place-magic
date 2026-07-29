@@ -10,6 +10,14 @@ const invoiceMigration = readFileSync(
   "supabase/migrations/20260427000100_invoice_lot_purchase_metadata.sql",
   "utf8",
 );
+const countMigration = readFileSync(
+  "supabase/migrations/20260728000200_reconcile_inventory_counts.sql",
+  "utf8",
+);
+const wasteMigration = readFileSync(
+  "supabase/migrations/20260728000300_record_waste_transaction.sql",
+  "utf8",
+);
 
 describe("sale transaction migration", () => {
   it("records sales through a dedicated RPC", () => {
@@ -41,5 +49,32 @@ describe("invoice lot metadata migration", () => {
     expect(invoiceMigration).toContain("ADD COLUMN IF NOT EXISTS cost_per_unit");
     expect(invoiceMigration).toContain("ADD COLUMN IF NOT EXISTS vendor");
     expect(invoiceMigration).toContain("ADD COLUMN IF NOT EXISTS notes");
+  });
+});
+
+describe("cycle count reconciliation migration", () => {
+  it("updates ingredient and lot stock in one authenticated transaction", () => {
+    expect(countMigration).toContain("CREATE OR REPLACE FUNCTION public.reconcile_inventory_counts");
+    expect(countMigration).toContain("SECURITY DEFINER");
+    expect(countMigration).toContain("auth.uid()");
+    expect(countMigration).toContain("UPDATE public.lots");
+    expect(countMigration).toContain("UPDATE public.ingredients");
+    expect(countMigration).toContain("GRANT EXECUTE ON FUNCTION public.reconcile_inventory_counts");
+  });
+
+  it("creates an adjustment lot when a physical count exceeds lot totals", () => {
+    expect(countMigration).toContain("Cycle count adjustment");
+    expect(countMigration).toContain("ELSIF v_lot_total < v_target");
+  });
+});
+
+describe("waste transaction migration", () => {
+  it("records waste and updates stock atomically", () => {
+    expect(wasteMigration).toContain("CREATE TABLE IF NOT EXISTS public.waste_events");
+    expect(wasteMigration).toContain("CREATE OR REPLACE FUNCTION public.record_waste_transaction");
+    expect(wasteMigration).toContain("UPDATE public.lots");
+    expect(wasteMigration).toContain("UPDATE public.ingredients");
+    expect(wasteMigration).toContain("INSERT INTO public.waste_events");
+    expect(wasteMigration).toContain("GRANT EXECUTE ON FUNCTION public.record_waste_transaction");
   });
 });

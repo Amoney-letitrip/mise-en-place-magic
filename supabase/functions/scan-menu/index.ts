@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -64,6 +65,26 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
 
   try {
+    const authHeader = req.headers.get("Authorization") ?? "";
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
+    if (!authHeader.startsWith("Bearer ") || !supabaseUrl || !supabaseAnonKey) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
     if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY not configured");
     const geminiModel = Deno.env.get("GEMINI_MODEL") || DEFAULT_GEMINI_MODEL;
@@ -71,6 +92,7 @@ serve(async (req) => {
     const { type, base64, mediaType, url } = await req.json();
 
     let userParts: GeminiPart[];
+    let validatedUrl: string | null = null;
 
     const extractionPrompt = `Extract every dish/menu item from this menu. For each dish, estimate the ingredients and quantities needed for one serving. Return JSON only.`;
 
@@ -96,11 +118,21 @@ serve(async (req) => {
           text: extractionPrompt,
         },
       ];
-    } else if (type === "url" && url) {
+    } else if (type === "url" && typeof url === "string") {
+      try {
+        const parsedUrl = new URL(url);
+        if (parsedUrl.protocol !== "https:" || url.length > 2_048) throw new Error("Invalid URL");
+        validatedUrl = parsedUrl.toString();
+      } catch {
+        return new Response(
+          JSON.stringify({ error: "Enter a valid public HTTPS menu URL." }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
       userParts = [
         {
           type: "text",
-          text: `I have a restaurant menu at this URL: ${url}\n\nPlease visit this URL and analyze the menu. ${extractionPrompt}`,
+          text: `Analyze the restaurant menu at this URL: ${validatedUrl}\n\n${extractionPrompt}`,
         },
       ];
     } else {
@@ -151,9 +183,11 @@ Rules:
               parts: userParts.map((part) => "type" in part ? { text: part.text } : part),
             },
           ],
+          ...(validatedUrl ? { tools: [{ url_context: {} }] } : {}),
           generationConfig: {
             temperature: 0.2,
             response_mime_type: "application/json",
+            maxOutputTokens: 8192,
           },
         }),
       }
@@ -181,6 +215,19 @@ Rules:
     }
 
     const data = await response.json();
+    if (validatedUrl) {
+      const urlMetadata = data.candidates?.[0]?.url_context_metadata?.url_metadata;
+      const retrieved = Array.isArray(urlMetadata) && urlMetadata.some(
+        (item: { retrieved_url?: string; url_retrieval_status?: string }) =>
+          item.url_retrieval_status === "URL_RETRIEVAL_STATUS_SUCCESS"
+      );
+      if (!retrieved) {
+        return new Response(
+          JSON.stringify({ error: "That menu page could not be retrieved. Upload a photo or PDF instead." }),
+          { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
     const raw = Array.isArray(data.candidates?.[0]?.content?.parts)
       ? data.candidates[0].content.parts
           .map((part: { text?: string }) => part.text || "")
@@ -194,15 +241,34 @@ Rules:
       if (!parsed?.recipes || !Array.isArray(parsed.recipes)) {
         throw new Error("Missing recipes array");
       }
-    } catch (e) {
-      console.error("Failed to parse AI response:", raw.slice(0, 500));
+    } catch {
+      console.error("Failed to parse AI menu response");
       return new Response(
         JSON.stringify({ error: "AI returned invalid format. Try scanning again or use a clearer image." }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    return new Response(JSON.stringify(parsed), {
+    const recipes = parsed.recipes.slice(0, 250).map((recipe: unknown) => {
+      const r = recipe as Record<string, unknown>;
+      const ingredients = Array.isArray(r.ingredients) ? r.ingredients : [];
+      return {
+        name: String(r.name || "Untitled recipe").trim().slice(0, 200),
+        ...(r.menu_price != null
+          ? { menu_price: Math.max(0, Math.min(100_000, Number(r.menu_price) || 0)) }
+          : {}),
+        ingredients: ingredients.slice(0, 100).map((ingredient: unknown) => {
+          const i = ingredient as Record<string, unknown>;
+          return {
+            name: String(i.name || "Unknown ingredient").trim().slice(0, 200),
+            qty: Math.max(0, Math.min(1_000_000, Number(i.qty) || 0)),
+            unit: String(i.unit || "each").trim().slice(0, 30),
+          };
+        }),
+      };
+    });
+
+    return new Response(JSON.stringify({ recipes }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {

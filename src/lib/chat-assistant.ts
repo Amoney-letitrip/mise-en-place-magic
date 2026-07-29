@@ -38,15 +38,15 @@ export async function sendChatMessage(
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
   const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
   const { data: { session } } = await supabase.auth.getSession();
-  const authHeader = session?.access_token
-    ? `Bearer ${session.access_token}`
-    : `Bearer ${anonKey}`;
+  if (!session?.access_token) {
+    throw new Error('Your session has expired. Log in again to use the shift assistant.');
+  }
 
   const response = await fetch(`${supabaseUrl}/functions/v1/chat-assistant`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': authHeader,
+      'Authorization': `Bearer ${session.access_token}`,
       'apikey': anonKey,
     },
     body: JSON.stringify({ message, history, context }),

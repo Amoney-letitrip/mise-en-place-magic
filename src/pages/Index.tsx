@@ -26,11 +26,10 @@ const Index = () => {
 
   // Create profile if it doesn't exist
   useEffect(() => {
-    if (!loadingProfile && profile === null) {
+    if (!loadingProfile && profile === null && !ensureProfile.isPending && !ensureProfile.isError && !ensureProfile.isSuccess) {
       ensureProfile.mutate();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadingProfile, profile, ensureProfile.mutate]);
+  }, [loadingProfile, profile, ensureProfile]);
 
   const capBadge = (n: number) => n > 99 ? 99 : n;
   const navItems: Array<{ id: TabId; label: string; badge?: number | null; badgeLabel?: string }> = [
@@ -82,7 +81,7 @@ const Index = () => {
   }), [state, profile]);
 
   // Error state
-  if (state.hasError) {
+  if (state.hasError || ensureProfile.isError) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <Card className="max-w-md w-full">
@@ -93,7 +92,16 @@ const Index = () => {
             <p className="text-sm text-muted-foreground">
               Something went wrong while loading your data. Please try again.
             </p>
-            <Button onClick={() => queryClient.invalidateQueries()}>Try Again</Button>
+            <Button onClick={() => {
+              if (ensureProfile.isError) {
+                ensureProfile.reset();
+                ensureProfile.mutate();
+              } else {
+                queryClient.invalidateQueries();
+              }
+            }}>
+              Try Again
+            </Button>
           </CardContent>
         </Card>
       </div>
@@ -101,7 +109,7 @@ const Index = () => {
   }
 
   // Loading state
-  if (state.isLoading || loadingProfile) {
+  if (state.isLoading || loadingProfile || ensureProfile.isPending) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
@@ -174,7 +182,7 @@ const Index = () => {
             expiredLots={state.expiredLots}
             lowItems={state.lowItems}
             logWaste={state.logWaste}
-            onUpdateIngredients={updates => state.bulkUpdateIngredients.mutate(updates)}
+            onUpdateIngredients={updates => state.bulkUpdateIngredients.mutateAsync({ updates, fefo: state.fefo })}
             setTab={state.setTab}
             vendors={state.vendors}
           />

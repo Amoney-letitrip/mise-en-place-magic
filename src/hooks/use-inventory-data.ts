@@ -163,22 +163,41 @@ export const useCreateLot = () => {
   });
 };
 
+export const useRecordWaste = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (lotId: string) => {
+      const { data, error } = await supabase.rpc('record_waste_transaction', {
+        p_lot_id: lotId,
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['ingredients'] });
+      qc.invalidateQueries({ queryKey: ['lots'] });
+      qc.invalidateQueries({ queryKey: ['waste-events'] });
+    },
+  });
+};
+
 export const useBulkUpdateIngredients = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (updates: Array<{ id: string; current_stock: number }>) => {
-      const results = await Promise.all(
-        updates.map(u =>
-          supabase
-            .from('ingredients')
-            .update({ current_stock: u.current_stock })
-            .eq('id', u.id)
-        )
-      );
-      const failed = results.find(r => r.error);
-      if (failed?.error) throw failed.error;
+    mutationFn: async ({ updates, fefo }: {
+      updates: Array<{ id: string; current_stock: number }>;
+      fefo: boolean;
+    }) => {
+      const { error } = await supabase.rpc('reconcile_inventory_counts', {
+        p_updates: updates,
+        p_fefo: fefo,
+      });
+      if (error) throw error;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['ingredients'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['ingredients'] });
+      qc.invalidateQueries({ queryKey: ['lots'] });
+    },
   });
 };
 
@@ -501,7 +520,7 @@ export const usePosIntegrations = () =>
     queryFn: async () => {
       const { data, error } = await supabase
         .from('pos_integrations')
-        .select('*')
+        .select('id,user_id,provider,status,external_location_id,last_synced_at,created_at,updated_at')
         .order('provider');
       if (error) throw error;
       return (data ?? []) as PosIntegration[];

@@ -42,9 +42,3 @@ export function calculateWasteImpact(input: WasteImpactInput): WasteImpactResult
     ),
   };
 }
-
-// Demo data used until real waste tracking is wired up.
-export const DEMO_WASTE_IMPACT_INPUT: WasteImpactInput = {
-  foodWasteAvoidedLbs: 86,
-  estimatedFoodCostSaved: 412,
-};

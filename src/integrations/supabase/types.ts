@@ -546,6 +546,19 @@ export type Database = {
           sale_id: string
         }[]
       }
+      reconcile_inventory_counts: {
+        Args: {
+          p_updates: Json
+          p_fefo?: boolean
+        }
+        Returns: number
+      }
+      record_waste_transaction: {
+        Args: {
+          p_lot_id: string
+        }
+        Returns: number
+      }
     }
     Enums: {
       [_ in never]: never

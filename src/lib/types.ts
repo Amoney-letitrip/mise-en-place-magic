@@ -52,8 +52,6 @@ export interface PosIntegration {
   user_id: string;
   provider: string;
   status: 'not_connected' | 'connected' | 'syncing' | 'error';
-  access_token: string | null;
-  refresh_token: string | null;
   external_location_id: string | null;
   last_synced_at: string | null;
   created_at: string;

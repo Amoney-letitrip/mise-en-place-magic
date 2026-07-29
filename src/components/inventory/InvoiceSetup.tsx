@@ -109,7 +109,9 @@ export const InvoiceSetup = () => {
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const authHeader = session?.access_token ? `Bearer ${session.access_token}` : '';
+      if (!session?.access_token) {
+        throw new Error('Your session has expired. Log in again before scanning invoices.');
+      }
 
       // Convert all files to base64 in parallel
       const encoded = await Promise.all(
@@ -124,7 +126,7 @@ export const InvoiceSetup = () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': authHeader,
+          'Authorization': `Bearer ${session.access_token}`,
           'apikey': SUPABASE_ANON_KEY,
         },
         body: JSON.stringify({ files: encoded }),
@@ -175,6 +177,7 @@ export const InvoiceSetup = () => {
     setImporting(true);
     let imported = 0;
     let failed = 0;
+    const importedIds = new Set<string>();
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
@@ -187,17 +190,19 @@ export const InvoiceSetup = () => {
       const name = vendorName.trim();
       if (!name) return;
 
-      const { data: existing } = await supabase
+      const { data: existing, error: lookupError } = await supabase
         .from('vendors')
         .select('id')
         .eq('user_id', user.id)
         .ilike('name', name)
         .maybeSingle();
+      if (lookupError) throw lookupError;
       if (existing) return;
 
-      await supabase
+      const { error: insertError } = await supabase
         .from('vendors')
         .insert({ name, user_id: user.id, lead_time_days: 2 });
+      if (insertError) throw insertError;
     };
 
     for (const row of selected) {
@@ -243,6 +248,7 @@ export const InvoiceSetup = () => {
         }
 
         imported++;
+        importedIds.add(row.id);
       } catch (e) {
         if (createdIngredientId) {
           await supabase.from('ingredients').delete().eq('id', createdIngredientId);
@@ -257,8 +263,7 @@ export const InvoiceSetup = () => {
 
     if (imported > 0) {
       toast.success(`Imported ${imported} ingredient${imported !== 1 ? 's' : ''}${failed ? ` · ${failed} failed` : ''}`);
-      // Remove successfully imported rows
-      setRows(prev => prev.filter(r => !r.selected));
+      setRows(prev => prev.filter(r => !importedIds.has(r.id)));
     } else {
       toast.error('Import failed — check that all required fields are filled');
     }
@@ -275,6 +280,9 @@ export const InvoiceSetup = () => {
 
       {/* Drop zone */}
       <div
+        role={files.length === 0 ? 'button' : undefined}
+        tabIndex={files.length === 0 ? 0 : -1}
+        aria-label="Choose invoice or receipt files"
         className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors cursor-pointer ${
           dragging
             ? 'border-primary bg-primary/5'
@@ -283,6 +291,13 @@ export const InvoiceSetup = () => {
               : 'border-border bg-muted/20 hover:border-primary/50 hover:bg-muted/40'
         }`}
         onClick={() => fileInputRef.current?.click()}
+        onKeyDown={e => {
+          if (files.length > 0) return;
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            fileInputRef.current?.click();
+          }
+        }}
         onDragOver={e => { e.preventDefault(); setDragging(true); }}
         onDragLeave={() => setDragging(false)}
         onDrop={onDrop}
@@ -314,6 +329,7 @@ export const InvoiceSetup = () => {
                 >
                   {f.name.length > 24 ? f.name.slice(0, 22) + '…' : f.name}
                   <button
+                    aria-label={`Remove ${f.name}`}
                     className="text-muted-foreground hover:text-red-500 transition-colors ml-0.5"
                     onClick={e => { e.stopPropagation(); setFiles(prev => prev.filter((_, j) => j !== i)); }}
                   >
@@ -322,7 +338,16 @@ export const InvoiceSetup = () => {
                 </span>
               ))}
             </div>
-            <div className="text-xs text-muted-foreground">Click to add more files</div>
+            <button
+              type="button"
+              className="text-xs text-primary hover:underline"
+              onClick={e => {
+                e.stopPropagation();
+                fileInputRef.current?.click();
+              }}
+            >
+              Add more files
+            </button>
           </>
         )}
       </div>

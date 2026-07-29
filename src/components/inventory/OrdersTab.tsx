@@ -114,8 +114,9 @@ export const OrdersTab = ({ orderDraft, vendors, forecasts, targetDays, setTarge
       </div>
 
       {/* Sub-tabs */}
-      <div className="border-b border-border mb-4 mt-3 flex gap-5">
+      <div className="border-b border-border mb-4 mt-3 flex gap-5" role="group" aria-label="Order views">
         <button
+          aria-pressed={subTab === 'orders'}
           onClick={() => setSubTab('orders')}
           className={`pb-2 text-[13px] font-semibold border-b-2 transition-colors flex items-center gap-1.5 ${subTab === 'orders' ? 'text-primary border-primary' : 'text-muted-foreground border-transparent hover:text-foreground'}`}
         >
@@ -125,6 +126,7 @@ export const OrdersTab = ({ orderDraft, vendors, forecasts, targetDays, setTarge
           )}
         </button>
         <button
+          aria-pressed={subTab === 'vendors'}
           onClick={() => setSubTab('vendors')}
           className={`pb-2 text-[13px] font-semibold border-b-2 transition-colors ${subTab === 'vendors' ? 'text-primary border-primary' : 'text-muted-foreground border-transparent hover:text-foreground'}`}
         >
@@ -304,10 +306,17 @@ export const OrdersTab = ({ orderDraft, vendors, forecasts, targetDays, setTarge
                   <div className="flex gap-1.5">
                     {vm.email && (
                       <a href={`mailto:${vm.email}`}>
-                        <Button variant="outline" size="sm">📧 Email</Button>
+                        <Button variant="outline" size="sm" aria-label={`Email ${vm.name}`}>📧 Email</Button>
                       </a>
                     )}
-                    <Button variant="outline" size="sm" onClick={() => openEditVendor(vm)}>Edit</Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      aria-label={`Edit ${vm.name}`}
+                      onClick={() => openEditVendor(vm)}
+                    >
+                      Edit
+                    </Button>
                   </div>
                 </div>
               ))}

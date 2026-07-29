@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { StatusTag, Mono, SectionHead } from './StatusTag';
 import { Button } from '@/components/ui/button';
 import {
@@ -68,14 +69,17 @@ export const SalesTab = ({ sales, recipes, flaggedSales, fefo }: SalesTabProps) 
   const [subTab, setSubTab] = useState<'record' | 'history' | 'pos'>('record');
   const [saleForm, setSaleForm] = useState({ item: '', qty: '1' });
   const [saleResult, setSaleResult] = useState<{ status: string; reason?: string | null } | null>(null);
+  const [recordingSale, setRecordingSale] = useState(false);
   const [csvText, setCsvText] = useState('');
   const [csvResult, setCsvResult] = useState<{ err?: string; processed?: number; flagged?: number; total?: number } | null>(null);
+  const [importingCSV, setImportingCSV] = useState(false);
   const [historyPage, setHistoryPage] = useState(1);
   const [disconnecting, setDisconnecting] = useState<string | null>(null);
   const [credentialPOS, setCredentialPOS] = useState<typeof POS_SYSTEMS[number] | null>(null);
   const [posCredentials, setPOSCredentials] = useState({ clientId: '', clientSecret: '' });
   const saleTimer = useRef<NodeJS.Timeout | null>(null);
   const qc = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const { data: posConnections = [] } = usePOSConnections();
   const disconnectPOS = useDisconnectPOS();
@@ -83,20 +87,24 @@ export const SalesTab = ({ sales, recipes, flaggedSales, fefo }: SalesTabProps) 
 
   // Check for ?pos_connected= or ?pos_error= in URL after OAuth redirect
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const connected = params.get('pos_connected');
-    const error = params.get('pos_error');
+    const connected = searchParams.get('pos_connected');
+    const error = searchParams.get('pos_error');
     if (connected) {
       toast.success(`${connected.charAt(0).toUpperCase() + connected.slice(1)} connected successfully!`);
       qc.invalidateQueries({ queryKey: ['pos_connections'] });
-      window.history.replaceState({}, '', window.location.pathname);
       setSubTab('pos');
     } else if (error) {
       toast.error(`POS connection failed: ${error.replace(/_/g, ' ')}`);
-      window.history.replaceState({}, '', window.location.pathname);
       setSubTab('pos');
     }
-  }, [qc]);
+    if (connected || error) {
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.delete('pos_connected');
+      nextParams.delete('pos_error');
+      nextParams.set('tab', 'sales');
+      setSearchParams(nextParams, { replace: true });
+    }
+  }, [qc, searchParams, setSearchParams]);
 
   const itemPopularity = (() => {
     const counts: Record<string, number> = {};
@@ -125,26 +133,52 @@ export const SalesTab = ({ sales, recipes, flaggedSales, fefo }: SalesTabProps) 
   }, [qc, fefo]);
 
   const doRecordSale = async () => {
-    if (!saleForm.item.trim()) return;
+    if (!saleForm.item.trim() || recordingSale) return;
     if (saleTimer.current) clearTimeout(saleTimer.current);
-    const r = await recordSale(saleForm.item, parseInt(saleForm.qty) || 1);
-    setSaleResult(r);
-    saleTimer.current = setTimeout(() => setSaleResult(null), 4000);
-    if (r.status === 'processed') toast.success(`${saleForm.item} ×${saleForm.qty} recorded — inventory updated`);
-    else if (r.status === 'flagged') toast.warning(r.reason || 'Sale flagged for review');
+    setRecordingSale(true);
+    try {
+      const r = await recordSale(saleForm.item, parseInt(saleForm.qty) || 1);
+      setSaleResult(r);
+      saleTimer.current = setTimeout(() => setSaleResult(null), 4000);
+      if (r.status === 'processed') toast.success(`${saleForm.item} ×${saleForm.qty} recorded — inventory updated`);
+      else if (r.status === 'flagged') toast.warning(r.reason || 'Sale flagged for review');
+    } finally {
+      setRecordingSale(false);
+    }
   };
 
   const importCSV = async () => {
+    if (importingCSV) return;
     const rows = parseSalesCSV(csvText);
     if (!rows.length) { setCsvResult({ err: 'No valid rows. Format: item name,quantity' }); return; }
-    let p = 0, f = 0;
-    for (const { item, qty } of rows) {
-      const r = await recordSale(item, qty, 'CSV');
-      if (r.status === 'processed') p++; else f++;
+    if (rows.length > 500) {
+      setCsvResult({ err: 'Import up to 500 sales at a time.' });
+      return;
     }
-    setCsvResult({ processed: p, flagged: f, total: rows.length });
-    setCsvText('');
-    toast.success(`CSV: ${p} processed, ${f} flagged`);
+    setImportingCSV(true);
+    let p = 0, f = 0, failed = 0;
+    try {
+      for (const { item, qty } of rows) {
+        const r = await recordSale(item, qty, 'CSV');
+        if (r.status === 'processed') p++;
+        else if (r.status === 'flagged') f++;
+        else failed++;
+      }
+      setCsvResult({
+        ...(failed > 0 ? { err: `${failed} row${failed === 1 ? '' : 's'} failed to import. ${p} processed and ${f} flagged.` } : {}),
+        processed: p,
+        flagged: f,
+        total: rows.length,
+      });
+      if (failed === 0) {
+        setCsvText('');
+        toast.success(`CSV: ${p} processed, ${f} flagged`);
+      } else {
+        toast.error(`CSV import incomplete: ${failed} failed`);
+      }
+    } finally {
+      setImportingCSV(false);
+    }
   };
 
   const handleDisconnect = async (posType: string) => {
@@ -259,15 +293,15 @@ export const SalesTab = ({ sales, recipes, flaggedSales, fefo }: SalesTabProps) 
       </Dialog>
 
       {/* Sub-tabs */}
-      <div className="border-b border-border mb-4 flex gap-5">
-        <button onClick={() => setSubTab('record')} className={`pb-2 text-[13px] font-semibold border-b-2 transition-colors ${subTab === 'record' ? 'text-primary border-primary' : 'text-muted-foreground border-transparent hover:text-foreground'}`}>
+      <div className="border-b border-border mb-4 flex gap-5" role="group" aria-label="Sales views">
+        <button aria-pressed={subTab === 'record'} onClick={() => setSubTab('record')} className={`pb-2 text-[13px] font-semibold border-b-2 transition-colors ${subTab === 'record' ? 'text-primary border-primary' : 'text-muted-foreground border-transparent hover:text-foreground'}`}>
           Record
         </button>
-        <button onClick={() => setSubTab('history')} className={`pb-2 text-[13px] font-semibold border-b-2 transition-colors flex items-center gap-1.5 ${subTab === 'history' ? 'text-primary border-primary' : 'text-muted-foreground border-transparent hover:text-foreground'}`}>
+        <button aria-pressed={subTab === 'history'} onClick={() => setSubTab('history')} className={`pb-2 text-[13px] font-semibold border-b-2 transition-colors flex items-center gap-1.5 ${subTab === 'history' ? 'text-primary border-primary' : 'text-muted-foreground border-transparent hover:text-foreground'}`}>
           History
           {flaggedSales.length > 0 && <StatusTag variant="yellow">{flaggedSales.length} flagged</StatusTag>}
         </button>
-        <button onClick={() => setSubTab('pos')} className={`pb-2 text-[13px] font-semibold border-b-2 transition-colors flex items-center gap-1.5 ${subTab === 'pos' ? 'text-primary border-primary' : 'text-muted-foreground border-transparent hover:text-foreground'}`}>
+        <button aria-pressed={subTab === 'pos'} onClick={() => setSubTab('pos')} className={`pb-2 text-[13px] font-semibold border-b-2 transition-colors flex items-center gap-1.5 ${subTab === 'pos' ? 'text-primary border-primary' : 'text-muted-foreground border-transparent hover:text-foreground'}`}>
           POS
           {connectedCount > 0
             ? <StatusTag variant="green">{connectedCount} connected</StatusTag>
@@ -282,8 +316,10 @@ export const SalesTab = ({ sales, recipes, flaggedSales, fefo }: SalesTabProps) 
             <div className="font-bold text-sm mb-3">Manual Entry</div>
             <div className="grid gap-2.5 mb-3">
               <div>
-                <label className="block text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">Menu Item</label>
+                <label htmlFor="manual-sale-item" className="block text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">Menu Item</label>
                 <input
+                  id="manual-sale-item"
+                  name="item"
                   list="menu-dl"
                   className="w-full px-3 py-2 border border-border rounded-md text-[13px] bg-card focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                   placeholder="Type or select…"
@@ -294,8 +330,10 @@ export const SalesTab = ({ sales, recipes, flaggedSales, fefo }: SalesTabProps) 
                 <datalist id="menu-dl">{recipes.map(r => <option key={r.id} value={r.name} />)}</datalist>
               </div>
               <div>
-                <label className="block text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">Qty</label>
+                <label htmlFor="manual-sale-quantity" className="block text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">Qty</label>
                 <input
+                  id="manual-sale-quantity"
+                  name="quantity"
                   type="number"
                   min={1}
                   className="w-full px-3 py-2 border border-border rounded-md text-[13px] bg-card focus:outline-none focus:ring-2 focus:ring-primary/20"
@@ -303,7 +341,9 @@ export const SalesTab = ({ sales, recipes, flaggedSales, fefo }: SalesTabProps) 
                   onChange={e => setSaleForm(f => ({ ...f, qty: e.target.value }))}
                 />
               </div>
-              <Button className="w-full" onClick={doRecordSale}>Record Sale</Button>
+              <Button className="w-full" onClick={doRecordSale} disabled={recordingSale || !saleForm.item.trim()}>
+                {recordingSale ? 'Recording…' : 'Record Sale'}
+              </Button>
             </div>
             {saleResult && (
               <div className={`p-2.5 rounded-lg text-[13px] animate-fade-up ${saleResult.status === 'processed' ? 'bg-emerald-50 border border-emerald-200 text-emerald-700' : 'bg-amber-50 border border-amber-200 text-amber-700'}`}>
@@ -325,7 +365,9 @@ export const SalesTab = ({ sales, recipes, flaggedSales, fefo }: SalesTabProps) 
               value={csvText}
               onChange={e => setCsvText(e.target.value)}
             />
-            <Button className="w-full" disabled={!csvText.trim()} onClick={importCSV}>Import</Button>
+            <Button className="w-full" disabled={!csvText.trim() || importingCSV} onClick={importCSV}>
+              {importingCSV ? 'Importing…' : 'Import'}
+            </Button>
             {csvResult && (
               <div className={`mt-2 p-2.5 rounded-lg text-[13px] ${csvResult.err ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-emerald-50 border border-emerald-200 text-emerald-700'}`}>
                 {csvResult.err || `✓ ${csvResult.processed}/${csvResult.total} processed · ${csvResult.flagged} flagged`}
@@ -431,7 +473,8 @@ export const SalesTab = ({ sales, recipes, flaggedSales, fefo }: SalesTabProps) 
           <div className="bg-card border border-border rounded-lg p-4">
             <div className="font-bold text-sm mb-1">Connect your POS system</div>
             <p className="text-xs text-muted-foreground mb-4">
-              When connected, sales flow in automatically and inventory is deducted in real time.
+              When connected, supported sale events appear as flagged records for review.
+              Inventory is not deducted until a sale is matched to a verified recipe.
               You'll need a live account with the provider and app credentials set in your Supabase environment.
             </p>
 
@@ -520,7 +563,7 @@ export const SalesTab = ({ sales, recipes, flaggedSales, fefo }: SalesTabProps) 
               <StatusTag variant="slate">For your POS dashboard</StatusTag>
             </div>
             <p className="text-xs text-muted-foreground mb-2.5">
-              After connecting, configure your POS to send sale events to this URL so inventory updates in real time:
+              After connecting, configure your POS to send supported sale events to this URL for review:
             </p>
             <div className="bg-muted/50 rounded-lg p-2.5 border border-border/50 font-mono text-[11px] break-all">
               {(import.meta.env.VITE_SUPABASE_URL as string) || 'https://[project].supabase.co'}/functions/v1/pos-webhook?provider=<span className="text-primary">square</span>
@@ -532,12 +575,10 @@ export const SalesTab = ({ sales, recipes, flaggedSales, fefo }: SalesTabProps) 
 
           {/* Manual API note */}
           <div className="bg-card border border-border rounded-lg p-4">
-            <div className="font-semibold text-[13px] mb-1.5">Custom / manual push</div>
+            <div className="font-semibold text-[13px] mb-1.5">Custom integrations</div>
             <div className="text-xs text-muted-foreground mb-2">
-              If you use a custom ordering system, insert directly into the <Mono>sales</Mono> table:
-            </div>
-            <div className="bg-muted/50 rounded-lg p-2.5 border border-border/50 font-mono text-[11px]">
-              supabase.from('sales').insert(&#123; item, qty, source, user_id &#125;)
+              Route custom sales through a server-side integration that validates the caller and uses the sale transaction RPC.
+              Direct browser inserts can bypass recipe matching and inventory deduction.
             </div>
           </div>
         </div>

@@ -166,13 +166,22 @@ serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+    if (message.length > 2_000) {
+      return new Response(
+        JSON.stringify({ error: "message is too long" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     // ── Build Gemini conversation ────────────────────────────────────────────
     // First user turn includes the inventory context so Gemini has it for the
     // entire conversation without us re-sending it on every turn.
     const contents: Array<{ role: string; parts: Array<{ text: string }> }> = [];
 
-    const recentHistory = history.slice(-MAX_HISTORY_TURNS * 2);
+    const recentHistory = history
+      .slice(-MAX_HISTORY_TURNS * 2)
+      .filter(entry => entry?.role === "user" || entry?.role === "model")
+      .map(entry => ({ ...entry, text: String(entry.text || "").slice(0, 4_000) }));
 
     if (recentHistory.length > 0) {
       const firstUserIdx = recentHistory.findIndex(h => h.role === "user");

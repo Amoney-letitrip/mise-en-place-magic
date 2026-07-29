@@ -15,6 +15,7 @@ import {
 import type { TabId } from '@/lib/types';
 import type { InventoryContext } from '@/lib/chat-assistant';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { useAuth } from '@/hooks/use-auth';
 import { AIChatDrawer, AIChatButton } from './AIChatDrawer';
 
 interface DinerHomeProps {
@@ -65,6 +66,7 @@ export const DinerHome = ({
   chatContext,
 }: DinerHomeProps) => {
   const isMobile = useIsMobile();
+  const { signOut, user } = useAuth();
   const [chatOpen, setChatOpen] = useState(false);
   const freshnessCount = expiredLots + expiringLots;
   const freshnessColor = expiredLots > 0 ? '#E74C3C' : '#E67E22';
@@ -169,10 +171,20 @@ export const DinerHome = ({
     const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
 
     return (
-      <div className="min-h-screen flex flex-col" style={{ background: '#151010' }}>
-        <div className="px-5 pt-12 pb-4">
-          <p className="text-white/50 text-sm mb-0.5">{greeting}</p>
-          {restaurantName && <h1 className="text-2xl font-extrabold text-white">{restaurantName}</h1>}
+      <div className="min-h-screen flex flex-col pb-nav-safe" style={{ background: '#151010' }}>
+        <div className="px-5 pt-12 pb-4 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-white/50 text-sm mb-0.5">{greeting}</p>
+            <h1 className="text-2xl font-extrabold text-white truncate">{restaurantName || 'Mise en Place'}</h1>
+          </div>
+          <button
+            onClick={signOut}
+            className="w-11 h-11 shrink-0 rounded-full bg-white/10 border border-white/15 text-sm font-bold text-white hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-white/70"
+            title={`Sign out (${user?.email || 'account'})`}
+            aria-label="Sign out"
+          >
+            {(user?.email?.[0] || 'U').toUpperCase()}
+          </button>
         </div>
 
         <div className="px-4 pb-4">
@@ -287,6 +299,14 @@ export const DinerHome = ({
     <div className="min-h-screen overflow-hidden" style={{ background: '#151010' }}>
       <div className="relative mx-auto flex min-h-screen w-full max-w-[1500px] items-center justify-center px-4 py-6">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_40%,rgba(255,255,255,0.08),transparent_42%)]" />
+        <button
+          onClick={signOut}
+          className="absolute right-6 top-6 z-20 w-11 h-11 rounded-full bg-black/60 border border-white/20 text-sm font-bold text-white backdrop-blur-md hover:bg-black/80 focus:outline-none focus:ring-2 focus:ring-white/70"
+          title={`Sign out (${user?.email || 'account'})`}
+          aria-label="Sign out"
+        >
+          {(user?.email?.[0] || 'U').toUpperCase()}
+        </button>
         <div className="relative w-full overflow-hidden rounded-[28px] border border-white/10 bg-black shadow-2xl">
           <img src="/diner-home.png" alt="" className="block w-full h-auto select-none" draggable={false} />
 
